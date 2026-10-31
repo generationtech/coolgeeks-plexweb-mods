@@ -138,3 +138,10 @@ export function scanBundleDir(dir: string): BundleScan {
   else if (modules.length === 0) warnings.push("no webpack module tables found; is this a webpack bundle?");
   return { files: files.map((f) => relative(dir, f)), modules, chunkGlobals: [...globals], warnings };
 }
+
+/** Chunk-loading global names used by any .js file under `dir` (cheap regex scan). */
+export function detectChunkGlobalsInDir(dir: string): string[] {
+  const names = new Set<string>();
+  for (const f of listJsFiles(dir)) detectChunkGlobals(readFileSync(f, "utf8")).forEach((n) => names.add(n));
+  return [...names];
+}
