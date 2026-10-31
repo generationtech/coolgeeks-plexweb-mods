@@ -2,6 +2,9 @@
  * Choosing and running a playback path (see PlaybackPath in bindings.ts):
  *   native -> native-fallback -> companion (auto), or forced with the
  *   runtime option pfh-player=primary|fallback|companion.
+ *
+ * The companion path is kept as a last resort, but in the sandbox PMS
+ * rejects it (404): Plex Web never registers as a remote-control player.
  */
 import { BindingUnavailableError, type NativePlayer, type PlaybackPath, type PlaybackRequest } from "./bindings";
 import { metadataKey, normalizeBaseUrl, playQueueTypeFor, serializeQuery, type HttpRequest } from "./playqueue";
@@ -88,6 +91,11 @@ export async function startPlayback(deps: PlaybackDeps, req: PlaybackRequest): P
   if (!clientId) throw new BindingUnavailableError("companion fallback: no X-Plex-Client-Identifier observed");
   const http = buildCompanionPlayMediaRequest(req, { targetClientIdentifier: clientId, commandId: deps.nextCommandId() });
   const res = await deps.fetch(http.url, { method: http.method, headers: http.headers });
-  if (!res.ok) throw new BindingUnavailableError(`companion fallback failed with HTTP ${res.status} (is Plex Web set to advertise as a player?)`);
+  if (!res.ok) {
+    throw new BindingUnavailableError(
+      `companion fallback failed with HTTP ${res.status}: PMS has no remote-control player under Plex Web's client id ` +
+        "(Plex Web 4.162.1 only controls other players; see docs/anchor-research.md)",
+    );
+  }
   return path;
 }

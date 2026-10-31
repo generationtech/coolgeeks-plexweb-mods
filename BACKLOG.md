@@ -175,6 +175,26 @@ Optional: prove the fallback on your install too:
 expects the `native-fallback` path), then `./injector/reapply.sh` again to
 go back to auto.
 
+Companion check (home checklist). The companion `playMedia` fallback could
+not work in the unclaimed sandbox. PMS answered 404, its `/clients` list
+stayed empty while Plex Web was open, and Plex Web 4.162.1 only *sends*
+`/player/*` commands; it never declares itself a player. A claimed server
+is the one setup not tried yet, so confirm there:
+
+```sh
+# with Plex Web open and signed in, in some browser:
+curl -s -H 'Accept: application/json' -H "X-Plex-Token: $PLEX_TOKEN" "$PLEX_URL/clients"   # expect: no "Plex Web" entry
+./injector/reapply.sh --opt pfh-player=companion
+# hard-reload, sort a library, "Play from here" on any item
+```
+
+Expected: a toast `companion fallback failed with HTTP 404: PMS has no
+remote-control player ...` and no playback. Record the result in
+`docs/anchor-research.md`. If it is 404 too, remove the companion path
+(or default `pfh-companion` to `off`). Then `./injector/reapply.sh` to go
+back to auto. If it unexpectedly plays, promote `api.companionPlayMedia`
+to verified with the PMS/Plex Web versions.
+
 Rollback at any time: `./injector/reapply.sh --uninstall` (restores
 index.html byte for byte, removes the runtime file and the backup).
 

@@ -34,6 +34,11 @@ export class PlexApi {
     return (body.MediaContainer.Metadata ?? []).map((m: any) => String(m.ratingKey));
   }
 
+  /** Players PMS can route remote-control commands to (GET /clients). */
+  async clients(): Promise<Array<{ name?: string; machineIdentifier?: string; product?: string }>> {
+    return (await this.json(`${this.baseUrl}/clients`)).MediaContainer.Server ?? [];
+  }
+
   /** Rating keys of a container's children (e.g. a season's episodes), in server order. */
   async childrenKeys(parentRatingKey: string): Promise<string[]> {
     const body = await this.json(`${this.baseUrl}/library/metadata/${parentRatingKey}/children`);

@@ -115,7 +115,9 @@ export const PLEX_ANCHORS = {
     companionPlayMedia: a(
       "/player/playback/playMedia",
       "unverified",
-      "Fallback only (used when the native player is unavailable); not exercised.",
+      `Last-resort path. ${VERIFIED_AGAINST}, unclaimed sandbox: PMS answers 404, its /clients list stays empty, and the bundle ` +
+        "only sends /player/* commands (controller) and never declares X-Plex-Provides: player, so Plex Web is not a target. " +
+        "Claimed-server check: BACKLOG B5.",
     ),
   },
 } as const;

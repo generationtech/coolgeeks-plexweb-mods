@@ -30,8 +30,13 @@ interface Ctx {
   played(): string[];
 }
 
-async function setup(page: Page, context: Parameters<typeof injectTokenAuth>[0], request: ConstructorParameters<typeof PlexApi>[0]): Promise<Ctx> {
-  const env = e2eEnv();
+async function setup(
+  page: Page,
+  context: Parameters<typeof injectTokenAuth>[0],
+  request: ConstructorParameters<typeof PlexApi>[0],
+  opts: { player?: string } = {},
+): Promise<Ctx> {
+  const env = { ...e2eEnv(), ...(opts.player ? { player: opts.player } : {}) };
   const api = new PlexApi(request, env.url, env.token);
   const ui = new PlexWeb(page);
   await injectTokenAuth(context, env.token);
@@ -246,4 +251,21 @@ test("300 items: unpaused autoplay follows the visible sort across the window ed
   const summary = `autoplay walked visible #${start}..#${fromPick.at(-1)} (${fromPick.length} items); the queue's first window ended at #${windowEnd}`;
   test.info().annotations.push({ type: "autoplay", description: summary });
   console.log(summary);
+});
+
+test("companion fallback: PMS cannot route playMedia to Plex Web (documents why it is not a usable path)", async ({ page, context, request }) => {
+  const env = e2eEnv();
+  test.skip(env.inject !== "route", "needs route mode to force pfh-player=companion");
+  const c = await setup(page, context, request, { player: "companion" });
+  await openSection(c, env.sectionId);
+  const order = await sortAndRead(c, env.sectionId, c.env.sortLabel);
+  const playMedia = page.waitForResponse((r) => /\/player\/playback\/playMedia\?/.test(r.url()));
+  const pick = order[Math.floor(order.length / 2)]!;
+  await playFromHere(c, pick); // the queue itself is still created
+  expect((await playMedia).status(), "PMS has no player under Plex Web's client id").toBe(404);
+  const pfh = await page.evaluate(() => (window as any).__plexwebMods.plugins["play-from-here"].lastError);
+  expect(pfh).toMatch(/companion fallback failed with HTTP 404: PMS has no remote-control player/);
+  const clients = await c.api.clients();
+  expect(clients, "Plex Web never registers as a remote-control player").toEqual([]);
+  await expect(page.locator(UI.player)).toHaveCount(0);
 });
