@@ -64,6 +64,7 @@ every PMS update. Read this file fully before changing anything.
 | Anchor preflight (read-only)  | `npm run preflight -- --bundle-dir <dir>`       |
 | Apply / dry-run / uninstall   | `./injector/reapply.sh [--dry-run\|--uninstall]` |
 | E2E (needs a real server)     | `npm run test:e2e` (skips when `PLEX_URL` unset) |
+| Local throwaway PMS for e2e   | `scripts/sandbox-pms.sh start` (unclaimed, localhost-only, no account) |
 
 gitleaks is a standalone binary (not an npm package). Install a release from
 <https://github.com/gitleaks/gitleaks/releases> or, if GitHub release
@@ -80,6 +81,9 @@ downloads are blocked, `go install github.com/zricethezav/gitleaks/v8@v8.30.1`.
 - `preflight/` — read-only anchor resolution report against a bundle dir
   (`--find <text>` for research: module ids only, never code).
 - `tools/` — snapshot of a public Plex Web URL into `bundle-snapshots/`.
+- `scripts/sandbox-pms.sh` — throwaway unclaimed PMS (latest Linux package,
+  extracted, `allowedNetworks` = localhost, ffmpeg test videos) for B3-style
+  curl tests and the e2e. Never sign it in or use an account token.
 - `test/` — unit tests with synthetic fake webpack bundles; `e2e/` —
   Playwright tests against a real server (skipped without `PLEX_URL`).
 - `docs/` — research notes (anchor strings only, never code excerpts).
