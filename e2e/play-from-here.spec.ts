@@ -34,22 +34,25 @@ test("Play from here queues the visible sorted order from the clicked item", asy
     await page.route(/\/web\/plexweb-mods\.js(\?.*)?$/, (route) => route.fulfill({ body: runtime, contentType: "application/javascript" }));
   }
 
-  await page.goto(ui.libraryUrl(env.url, machineIdentifier, env.sectionId));
+  await ui.openLibrary(ui.libraryUrl(env.url, machineIdentifier, env.sectionId));
   await ui.waitForRuntime();
 
   // 1. Non-default sort, captured from Plex Web's own listing request.
-  const sorted = page.waitForRequest((r) => /\/library\/sections\/\d+\/all\?/.test(r.url()) && /[?&]sort=/.test(r.url()));
+  const sorted = page.waitForResponse((r) => /\/library\/sections\/\d+\/all\?/.test(r.url()) && /[?&]sort=/.test(r.url()));
   await ui.applySort(env.sortLabel);
   const listingParams = new URL((await sorted).url()).searchParams;
-  await page.waitForLoadState("networkidle");
 
-  // 2. Visible order must match the server's order for the same params.
-  const visible = await ui.visibleRatingKeys();
-  expect(visible.length, "need at least 3 visible items").toBeGreaterThanOrEqual(3);
+  // 2. Visible order must match the server's order for the same params. The
+  //    grid re-renders after a sort, so poll until it shows a contiguous run.
   const serverOrder = await api.listingKeys(env.sectionId, listingParams);
-  const offset = serverOrder.indexOf(visible[0]!);
-  expect(offset, "first visible item is in the server listing").toBeGreaterThanOrEqual(0);
-  expect(serverOrder.slice(offset, offset + visible.length)).toEqual(visible);
+  expect(serverOrder.length, "need at least 3 items in the section").toBeGreaterThanOrEqual(3);
+  const isContiguousRun = (v: string[]) => {
+    const offset = serverOrder.indexOf(v[0] ?? "");
+    return v.length >= 3 && offset >= 0 && serverOrder.slice(offset, offset + v.length).join() === v.join();
+  };
+  await expect.poll(async () => isContiguousRun(await ui.visibleRatingKeys()), { timeout: 20_000 }).toBe(true);
+  const visible = await ui.visibleRatingKeys();
+  expect(isContiguousRun(visible), "visible order equals the server's sorted order").toBe(true);
 
   // 3. Play from here on a mid-list item.
   const pick = visible[Math.floor(visible.length / 2)]!;
@@ -68,7 +71,14 @@ test("Play from here queues the visible sorted order from the clicked item", asy
   expect(fromPick.length).toBeGreaterThanOrEqual(Math.min(expected.length, 2));
 
   // 5. Plex Web's native player opened.
-  await expect.soft(page.locator(UI.player).first()).toBeVisible({ timeout: 20_000 });
-  const pfh = await page.evaluate(() => (window as any).__plexwebMods.plugins["play-from-here"].lastError);
-  expect(pfh, "plugin reported no error").toBeNull();
+  await expect(page.locator(UI.player).first()).toBeAttached({ timeout: 30_000 });
+  const pfh = await page.evaluate(() => {
+    const p = (window as any).__plexwebMods.plugins["play-from-here"];
+    return { error: p.lastError, playback: p.lastResult?.playback, queue: p.lastResult?.queue?.id };
+  });
+  expect(pfh.error, "plugin reported no error").toBeNull();
+  expect(pfh.playback, "started through Plex Web's own player").toBe("native");
+  expect(pfh.queue).toBe(playQueueID);
+  const status = await page.evaluate(() => (window as any).__plexwebMods.report({ final: true }));
+  expect(status.failures, "no anchor failures at runtime").toEqual([]);
 });

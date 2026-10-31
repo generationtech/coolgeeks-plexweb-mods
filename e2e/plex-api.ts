@@ -6,11 +6,13 @@ export class PlexApi {
   constructor(
     private readonly request: APIRequestContext,
     private readonly baseUrl: string,
-    private readonly token: string,
+    private readonly token: string | undefined,
   ) {}
 
   private headers() {
-    return { Accept: "application/json", "X-Plex-Token": this.token, "X-Plex-Client-Identifier": "plexweb-mods-e2e" };
+    const h: Record<string, string> = { Accept: "application/json", "X-Plex-Client-Identifier": "plexweb-mods-e2e" };
+    if (this.token) h["X-Plex-Token"] = this.token;
+    return h;
   }
 
   private async json(url: string): Promise<any> {

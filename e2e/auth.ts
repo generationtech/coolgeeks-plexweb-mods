@@ -7,7 +7,8 @@ import type { BrowserContext } from "@playwright/test";
 
 export const TOKEN_STORAGE_KEYS = ["myPlexAccessToken"] as const;
 
-export async function injectTokenAuth(context: BrowserContext, token: string): Promise<void> {
+export async function injectTokenAuth(context: BrowserContext, token: string | undefined): Promise<void> {
+  if (!token) return; // e.g. an unclaimed server on an allowed network
   await context.addInitScript(
     ({ keys, token }) => {
       try {

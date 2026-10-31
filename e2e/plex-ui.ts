@@ -1,20 +1,25 @@
 /**
- * Page object for Plex Web. Every selector/label here is Plex-coupled and
- * UNVERIFIED until the first real e2e run (BACKLOG B6). Keep them all in this
- * file. Runtime-side DOM anchors live in patches/play-from-here/plex-anchors.ts.
+ * Page object for Plex Web. Every selector/label here is Plex-coupled; all
+ * were verified against Plex Web 4.162.1 (PMS 1.43.5) in a live run. Keep
+ * them in this file. Runtime-side DOM anchors live in
+ * patches/play-from-here/plex-anchors.ts.
  */
 import type { Page } from "@playwright/test";
 import { PLEX_ANCHORS } from "../patches/play-from-here/plex-anchors";
 
 export const UI = {
-  /** Button that opens the sort menu on a library listing (shows the current sort). */
-  sortButton: '[data-testid="sortButton"], button[aria-label*="Sort" i]',
-  /** Entries of the opened sort menu. */
-  sortMenuItem: (label: string) => `[role="menuitem"]:has-text("${label}"), [role="menuitemradio"]:has-text("${label}")`,
-  /** "More" (...) button inside a poster card. */
-  moreButton: 'button[aria-label*="More" i], [data-testid="moreButton"]',
-  /** Something only visible while the player is open. */
-  player: '[data-testid="videoPlayer"], [class*="Player"] video, video',
+  /** One-time page of a new browser profile ("Plex Web Setup"). */
+  finishSetup: "Finish Setup",
+  /** Notice shown for an unclaimed server; dismissible. */
+  dismissUnclaimed: "Don't show this again",
+  /** Sort popup button on a library grid; its text is the current sort ("By Title"). */
+  sortButton: { css: 'button[aria-haspopup="true"]', text: /^By / },
+  /** A poster card in the grid. */
+  card: '[data-testid="cellItem"]',
+  /** The card's "..." button. */
+  moreButton: 'button[aria-label="More Actions"]',
+  /** Something only present while the player is up. */
+  player: "video",
   playFromHere: '[data-plexweb-mods="play-from-here"]',
 } as const;
 
@@ -25,7 +30,24 @@ export class PlexWeb {
   constructor(readonly page: Page) {}
 
   libraryUrl(baseUrl: string, machineIdentifier: string, sectionId: string): string {
-    return `${baseUrl}/web/index.html#!/media/${machineIdentifier}/com.plexapp.plugins.library?source=${sectionId}`;
+    return `${baseUrl}/web/index.html#!/media/${machineIdentifier}/com.plexapp.plugins.library?source=${sectionId}&pivot=library`;
+  }
+
+  /** Opens the library grid, getting past first-run pages on a fresh profile. */
+  async openLibrary(url: string): Promise<void> {
+    await this.page.goto(url);
+    const setup = this.page.getByText(UI.finishSetup, { exact: true });
+    const grid = this.page.locator(UI.card).first();
+    await setup.or(grid).or(this.page.getByText(UI.dismissUnclaimed)).first().waitFor({ timeout: 45_000 });
+    if (await setup.count()) {
+      await setup.first().click();
+      await this.page.waitForURL((u) => !u.hash.includes("client-setup"));
+      await this.page.goto(url);
+    }
+    const dismiss = this.page.getByText(UI.dismissUnclaimed);
+    await dismiss.or(grid).first().waitFor({ timeout: 45_000 });
+    if (await dismiss.count()) await dismiss.first().click();
+    await grid.waitFor({ timeout: 45_000 });
   }
 
   async waitForRuntime(): Promise<void> {
@@ -33,8 +55,8 @@ export class PlexWeb {
   }
 
   async applySort(label: string): Promise<void> {
-    await this.page.locator(UI.sortButton).first().click();
-    await this.page.locator(UI.sortMenuItem(label)).first().click();
+    await this.page.locator(UI.sortButton.css, { hasText: UI.sortButton.text }).first().click();
+    await this.page.getByRole("menuitem", { name: label, exact: true }).first().click();
   }
 
   /** Rating keys of the poster cards currently in the DOM, in document order. */
@@ -46,7 +68,7 @@ export class PlexWeb {
         const keys: string[] = [];
         for (const a of links) {
           const m = re.exec(a.getAttribute("href") ?? "");
-          if (m?.[1] && keys[keys.length - 1] !== m[1] && !keys.includes(m[1])) keys.push(m[1]);
+          if (m?.[1] && !keys.includes(m[1])) keys.push(m[1]);
         }
         return keys;
       },
@@ -54,14 +76,12 @@ export class PlexWeb {
     );
   }
 
-  /** Opens the "more" menu of the card for `ratingKey` and clicks "Play from here". */
+  /** Opens the "..." menu of the card for `ratingKey` and clicks "Play from here". */
   async playFromHere(ratingKey: string): Promise<void> {
-    const link = this.page.locator(`${itemLinkSelector}[href*="%2Flibrary%2Fmetadata%2F${ratingKey}"]`).first();
-    await link.scrollIntoViewIfNeeded();
-    await link.hover();
-    // the card is the closest ancestor holding a "more" button
-    const card = link.locator(`xpath=ancestor::*[.//*[self::button]][1]`);
-    await card.locator(UI.moreButton).first().click();
+    const card = this.page.locator(UI.card).filter({ has: this.page.locator(`a[href*="%2Flibrary%2Fmetadata%2F${ratingKey}&"], a[href$="%2Flibrary%2Fmetadata%2F${ratingKey}"]`) }).first();
+    await card.scrollIntoViewIfNeeded();
+    await card.hover();
+    await card.locator(UI.moreButton).click();
     await this.page.locator(UI.playFromHere).click();
   }
 }
