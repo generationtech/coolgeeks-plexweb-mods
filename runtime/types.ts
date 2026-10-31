@@ -49,12 +49,14 @@ export interface PatchDef {
   note?: string;
 }
 
-/** API handed to a plugin's start(). */
+/** API handed to a plugin's init() and start(). */
 export interface PluginApi {
   /** The global runtime handle (window.__plexwebMods). */
   readonly mods: unknown;
   readonly log: Logger;
   readonly config: RuntimeConfig;
+  /** Small on-page message (toast). */
+  notify(message: string, level?: "info" | "error"): void;
 }
 
 export interface PluginDef {
@@ -62,6 +64,12 @@ export interface PluginDef {
   readonly name: string;
   readonly description: string;
   readonly patches: readonly PatchDef[];
+  /**
+   * Runs synchronously when the runtime script executes, i.e. BEFORE Plex
+   * Web's own scripts (browser only; never called by preflight). Use it to
+   * install observers that must see Plex Web's first requests.
+   */
+  init?(api: PluginApi): void;
   /** Runs once the DOM is ready (browser only; never called by preflight). */
   start?(api: PluginApi): void | Promise<void>;
 }
