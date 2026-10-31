@@ -65,9 +65,10 @@ export function createPatches(plugin: Pick<PlayFromHerePlugin, "diagnostics">): 
       find: [...bundle.nativePlayerModule.value],
       lazy: true,
       all: true,
-      note:
-        `${bundle.nativePlayerModule.status}: candidate anchors; no adapter yet, so every located module ` +
-        `reports EXPORTS_UNRECOGNIZED until the real entry point is identified (BACKLOG)`,
+      note: `${bundle.nativePlayerModule.status}: candidate anchors for the module that starts Plex Web's player`,
+      todo:
+        "native player adapter not written: identify the entry point in a real bundle (BACKLOG B5), narrow the anchors, " +
+        "then register a NativePlayer from onExports and remove this todo",
       onExports: (exports, moduleId) => {
         plugin.diagnostics.nativePlayerCandidates.push({ moduleId, exportKeys: exportKeys(exports) });
         // Adapter goes here once the entry point is known: build a NativePlayer

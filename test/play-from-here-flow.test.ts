@@ -159,5 +159,6 @@ describe("play-from-here patch definitions", () => {
     r.captures.forEach((c) => c.run({ a: 1, b: 2 }, "77"));
     expect(diag.nativePlayerCandidates).toEqual([{ moduleId: "77", exportKeys: ["a", "b"] }]);
     expect(s.report().failures.map((f) => f.code)).toEqual(["EXPORTS_UNRECOGNIZED"]);
+    expect(s.report({ final: true }).failures.map((f) => f.code)).toEqual(["EXPORTS_UNRECOGNIZED", "PATCH_INCOMPLETE"]);
   });
 });

@@ -19,7 +19,9 @@ export type IssueCode =
   /** onExports threw. */
   | "EXPORTS_HANDLER_ERROR"
   /** onExports returned false: exports did not have the expected shape. */
-  | "EXPORTS_UNRECOGNIZED";
+  | "EXPORTS_UNRECOGNIZED"
+  /** The patch is marked `todo` (integration unfinished); final reports only. */
+  | "PATCH_INCOMPLETE";
 
 export interface PatchIssue {
   code: IssueCode;
@@ -268,6 +270,9 @@ export class PatchSession {
             message: `${detail} (scanned ${this.seenModules.size} modules).`,
           }),
         );
+      }
+      if (final && st.def.todo) {
+        issues.push(this.makeIssue(st, "PATCH_INCOMPLETE", { message: `integration unfinished: ${st.def.todo}` }));
       }
       const failed = issues.length > 0;
       const status: PatchStatus = failed ? "failed" : st.applied.length > 0 ? "applied" : "pending";

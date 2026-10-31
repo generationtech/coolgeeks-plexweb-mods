@@ -188,6 +188,15 @@ describe("PatchSession.report", () => {
     expect(s.report({ final: true, lazyIsFinal: true }).failures.some((f) => f.patchId === "d/lazy")).toBe(true);
   });
 
+  it("a todo patch never looks green in a final report, even when resolved", () => {
+    const s = new PatchSession([plugin([{ id: "d/todo", find: "k", todo: "adapter missing", onExports: () => {} }])]);
+    s.transform("1", "k");
+    expect(s.report().ok).toBe(true); // interim
+    const r = s.report({ final: true });
+    expect(r.ok).toBe(false);
+    expect(r.failures[0]!.message).toBe("[d/todo] PATCH_INCOMPLETE: integration unfinished: adapter missing");
+  });
+
   it("records which modules each anchor resolved in", () => {
     const s = new PatchSession([plugin([{ id: "d/a", find: "k", replacements: [{ match: "k", replace: "K" }] }])]);
     s.transform("10", "k");

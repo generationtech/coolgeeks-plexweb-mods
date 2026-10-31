@@ -47,6 +47,12 @@ export interface PatchDef {
   lazy?: boolean;
   /** Free-form provenance note shown in reports (e.g. "unverified candidate"). */
   note?: string;
+  /**
+   * Marks a patch whose integration is not finished. Final reports (runtime
+   * and preflight) list it as PATCH_INCOMPLETE even when every anchor
+   * resolved, so an unfinished mod can never look green.
+   */
+  todo?: string;
 }
 
 /** API handed to a plugin's init() and start(). */

@@ -146,8 +146,10 @@ describe("bundled runtime (dist/plexweb-mods.js) smoke test", () => {
       const report = mods.report({ final: true });
       const menu = report.entries.find((e: any) => e.patchId === "play-from-here/context-menu-module");
       expect(menu.located).toEqual(["300"]);
-      // the native-player candidates are lazy, so a page load alone is not a failure
-      expect(mods.status).toBe("ok");
+      // the native-player integration is marked todo, so the runtime must not look green
+      expect(mods.status).toBe("anchor-failure");
+      expect(report.failures.map((f: any) => f.code)).toEqual(["PATCH_INCOMPLETE"]);
+      expect(consoleError.mock.calls.flat().join(" ")).toMatch(/PATCH_INCOMPLETE: integration unfinished: native player adapter not written/);
       expect(mods.plugins["play-from-here"].tracker).not.toBeNull();
     } finally {
       consoleError.mockRestore();
