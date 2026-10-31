@@ -109,8 +109,9 @@ Playback starts in Plex Web's own player and the runtime anchor report is
 clean. They pass with the runtime injected by request interception and
 with it applied by the injector, on either native player path; test 6 runs
 in interception mode only. CI runs the suite against a fresh sandbox on
-every push, in all three modes (the first run with the Node 24 actions was
-in progress when this was written).
+every push, in all three modes (interception on the auto path, interception
+with the fallback forced, injector-applied); all jobs are green on the
+Node 24 actions, with no Node 20 deprecation warning.
 
 - **Native player, two paths** (group `play-from-here/player`; preflight and
   the runtime print which is active):
