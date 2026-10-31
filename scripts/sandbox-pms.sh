@@ -140,7 +140,8 @@ make_libraries() {
   add_section "Test TV" show tv.plex.agents.none "Plex TV Series" "$DIR/media/tv"
   # "Other Videos": the Video Files scanner only pairs with the legacy Personal Media agent.
   add_section "Test Other Videos" movie com.plexapp.agents.none "Plex Video Files Scanner" "$DIR/media/other"
-  add_section "Test Big" movie tv.plex.agents.none "Plex Movie" "$DIR/media/big"
+  # The Video Files scanner indexes 300 files in seconds (the Plex Movie scanner took ~17 min).
+  add_section "Test Big" movie com.plexapp.agents.none "Plex Video Files Scanner" "$DIR/media/big"
   # Wait for the scans, then pin titles/years from the folder names
   # ("<Title> (<Year>)") so sorts are deterministic. The scanner's metadata
   # pass can overwrite early edits, so apply, verify, and retry.
