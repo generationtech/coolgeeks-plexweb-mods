@@ -80,8 +80,7 @@ injector patches.
    Related action types: `.../startPlayback`, `.../queuePlayback`.
    - **Risk:** in 4.162.1 nothing dispatches this action. The handler exists
      and works, but its action creator is never exported or used, so Plex
-     could drop it as dead code. Preflight would then fail loudly
-     (`FIND_UNRESOLVED`); the next candidate is `.../startPlayback`.
+     could drop it as dead code. That is why a fallback exists (next item).
 5. **DOM and routes.** Library grid route
    `#!/media/<machineId>/com.plexapp.plugins.library?source=<sectionId>&pivot=library`
    (the section opens on `Recommended`, without `pivot`). Detail links
@@ -91,10 +90,53 @@ injector patches.
    button whose text is the current sort ("By Title", "By Year"), and its
    entries are `role="menuitem"`. Choosing "Year" makes the grid request
    `sort=year%3Adesc`.
+6. **Fallback player (session 3).** Two candidates from the same handler map:
+   - `ui/player/playerLifecycle/startPlayback` (the BACKLOG's candidate) was
+     **rejected**. It takes an item entity plus `options.containerKey`, but
+     Plex Web's queue builder only uses "directory + key" for the types
+     `track`, `photo` and `clip`. A movie gets a single-item queue and an
+     episode a "continuous" one, so it cannot reproduce "play from here".
+     It also needs the clicked item as a legacy entity. The new React
+     library grid never registers its items in `appModel.get("entities")`
+     (`metadataItems` stayed empty), which only holds servers and providers there.
+   - `ui/player/playerLifecycle/queuePlayback` was **chosen**. With
+     `options.playQueueID` (+ `options.type`, `options.next`) it fetches that
+     existing queue, i.e. ours, and starts it unpaused. Caveat: if a player
+     already holds a queue from the same provider, this action **appends**
+     instead. The adapter therefore first runs the handlers for
+     `ui/player/playerLifecycle/endPlayback` (`isForced`) and
+     `ui/player/playerControls/resetAndClosePlayer`. Plex Web's batching
+     helper runs those synchronously, so the reset is complete before the
+     queue action reads the player state.
+   - Player models live at `appModel.get("ui").get("audioVideoPlayer" | "photoPlayer")`,
+     and the open queue is that model's `playQueue` attribute.
+7. **More views and libraries (session 3).**
+   - View styles: "Grid View", "Detail View", "Table View" (popup
+     `data-testid="toolbarView"`). In Detail View a row's "More Actions"
+     appears on hover. Table View has **no** "By …" sort popup: its column
+     headers ("Title", "Year") are links that sort. Long lists render rows
+     lazily as you scroll.
+   - TV: a season page is `#!/server/<machineId>/details?key=%2Flibrary%2Fmetadata%2F<season>`
+     and lists its episodes with `GET /library/metadata/<season>/children`. The
+     show page lists seasons the same way.
+   - Background queries: Plex Web also requests `/library/sections/<id>/all`
+     for its recently-added hubs, with `contentDirectoryID` /
+     `pinnedContentDirectoryID`. Such a request arriving after the grid's
+     would have replaced the visible sort in our observer (a real bug, now
+     filtered).
+   - Other Videos libraries use the "Plex Video Files Scanner", which PMS
+     only pairs with the legacy agent `com.plexapp.agents.none`. Their items
+     are type `movie`.
+8. **Play-queue windowing (PMS 1.43.5).** For 300 items, POST and GET
+   `/playQueues` return a **window of 41** (20 before the selection, the
+   selection, 20 after) with `playQueueTotalCount` 300; `window=N` widens it.
+   Plex Web's own Next/Previous move across both window edges in the
+   visible order (checked live by walking from offset 30 to 51 and back to 9
+   with the player paused).
 
 All anchors in `patches/play-from-here/plex-anchors.ts` are now `verified`
 except the companion fallback (`api.companionPlayMedia`), which is never
-needed while the native player works.
+needed while either native player path works.
 
 ## How the native-player patch uses this (no code from Plex)
 
@@ -107,6 +149,12 @@ needed while the native player works.
   the handler map, regardless of minified export names.
 - At click time: resolve server and provider entity ids through the app
   model and call the handler with the created play queue.
+- The fallback patch selects the same module through the
+  `.../queuePlayback` action string. It has the same replacement (both
+  register the same getter) and captures the same handler map. Both
+  patches form the group `play-from-here/player`. Preflight and the runtime
+  report print `group play-from-here/player: active = …; standby = …`, and
+  `pfh-player=primary|fallback|companion` forces a path.
 
 ## B3: POST /playQueues with a sorted uri + key (PMS 1.43.5, live)
 
@@ -146,6 +194,15 @@ refused by the sandbox network and were not needed.
   flake (waiting for the grid to re-render after sorting), all 12 runs passed,
   in both route-interception and applied modes, on two separate sandbox
   installs.
+- Session 3: the e2e grew to 6 tests: grid, Detail View, Table View, TV
+  season page, Other Videos, and 300-item windowing. Every test checks the
+  selected offset and the items on both sides of the clicked one. All 6
+  passed in route mode (auto and forced fallback) and against the
+  injector-applied install (default and `--opt pfh-player=fallback`).
+- Sandbox notes: PMS merges byte-identical files into one item, so every
+  generated file must differ. The Plex Movie scanner took about 17 minutes
+  for 300 files, the Video Files scanner under 20 seconds. A fresh sandbox
+  with a cached package starts in about 1m40s.
 
 ## Findings log
 
@@ -154,3 +211,8 @@ refused by the sandbox network and were not needed.
   (app.plex.tv) snapshotted; all anchors researched, replaced where wrong
   (`Add to Up Next`, `role=menu`), and verified by preflight plus a live run;
   native player adapter written; B3 and e2e pass against the sandbox PMS.
+- 2026-10-31 (session 3): fallback player researched (`startPlayback`
+  rejected, `queuePlayback` chosen) and verified live by forcing it; season
+  pages, Detail/Table View, Other Videos and queue windowing verified; one
+  observer bug (background hub queries) found and fixed; sandbox e2e added
+  to CI.

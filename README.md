@@ -54,7 +54,7 @@ Linux package installs usually need root to write the Plex Web directory:
 | `npm run preflight -- --bundle-dir <dir> --find "Play Next"` | research: which modules contain a string (ids only) |
 | `./injector/reapply.sh --snapshot` | copy the server's Plex Web into gitignored `bundle-snapshots/` |
 | `npm run test:e2e` | Playwright against a real server; skips when `PLEX_URL` is unset |
-| `scripts/sandbox-pms.sh start` | throwaway unclaimed PMS (latest package, localhost only, test videos) for e2e |
+| `scripts/sandbox-pms.sh start` | throwaway unclaimed PMS (latest package, localhost only, four generated libraries) for e2e |
 | `npm run secrets` | gitleaks over the full history |
 
 Runtime options are passed as `--opt key=value` and end up as
@@ -62,7 +62,8 @@ Runtime options are passed as `--opt key=value` and end up as
 the experimental companion fallback, `pfh-scheme=library` uses
 `library://` URIs, `pfh-drop-params=a,b` drops extra listing params,
 `pfh-route-check=off` offers the menu entry without the route check.
-`--no-banner` keeps failures in the console only. In the browser,
+`pfh-player=primary|fallback|companion` forces a playback path (default:
+auto). `--no-banner` keeps failures in the console only. In the browser,
 `localStorage["plexweb-mods:debug"] = "1"` turns on debug logging, and
 `__plexwebMods.printReport({ final: true })` prints the anchor report.
 
@@ -83,61 +84,67 @@ the experimental companion fallback, `pfh-scheme=library` uses
 
 ## STATUS
 
-_Last updated: 2026-10-31 (session 2)._
+_Last updated: 2026-10-31 (session 3)._
 
 **"Play from here" works end to end against a real Plex Media Server.**
-Tested on PMS 1.43.5.11079 with its bundled Plex Web 4.162.1, run in a
-throwaway sandbox (unclaimed, localhost only, no account; reproducible with
-`scripts/sandbox-pms.sh start`). The e2e suite (6 tests) passes in every
-mode tried: runtime injected by request interception or applied by the
-injector, with the primary player path or the fallback forced. It covers:
+Tested on PMS 1.43.5.11079 with its bundled Plex Web 4.162.1, in a
+throwaway sandbox (unclaimed, localhost only, no account, generated media;
+reproducible with `scripts/sandbox-pms.sh start`). The e2e suite has 6 tests:
 
-1. the library grid, Detail View and Table View, each after a non-default sort;
+1. library grid, Detail View and Table View, each after a non-default sort;
 2. a TV season page ("Play from here" on an episode);
 3. an Other Videos library;
 4. a 300-item library: PMS windows the queue (41 of 300 items by default),
    and Plex Web's Next/Previous follow the visible sort across both window
-   edges;
-5. in every test, `GET /playQueues/<id>` selects the clicked item at its
-   visible index, with the previous and next items in visible order;
-   playback starts in Plex Web's own player, and the runtime anchor report
-   is clean.
+   edges.
 
-The injector applied it to that PMS, verified it over HTTP, re-ran with no
-changes, and uninstalled byte for byte.
+In every test, `GET /playQueues/<id>` selects the clicked item at its
+visible index, with the items before and after it in visible order.
+Playback starts in Plex Web's own player and the runtime anchor report is
+clean. All 6 pass with the runtime injected by request interception and
+with it applied by the injector, on either player path. CI runs the same
+suite against a fresh sandbox on every push (its first run was in progress
+when this was written).
 
-- **Anchors:** researched in the real bundle (webpack 5, chunk global
-  `webpackChunkplex_web_client`); every Plex-coupled anchor in
-  `plex-anchors.ts` is verified. Two were wrong before and were replaced:
-  the menu label is "Add to Queue" (not "Add to Up Next"), and menus have
-  no `role="menu"` container. Preflight reports all anchors OK on 4.162.1,
+- **Native player, two paths** (group `play-from-here/player`; preflight and
+  the runtime print which is active):
+  - **primary:** Plex Web's "start existing play queue" action;
+  - **fallback:** its "queue playback" action, pointed at the same queue.
+    The fallback ends and resets an open player first, so it replaces the
+    queue rather than appending.
+
+  Both were forced and verified live (`--opt pfh-player=primary|fallback|companion`).
+  The BACKLOG's earlier fallback candidate, "start playback", was rejected
+  after research: it only builds directory+key queues for tracks, photos and
+  clips.
+- **Anchors:** every Plex-coupled anchor in `plex-anchors.ts` is verified
+  except the never-needed companion fallback. Preflight is green on 4.162.1
   and on the initial chunks of 4.163.0 from app.plex.tv. See
   `docs/anchor-research.md`.
-- **Native player, two paths:** the primary patch captures Plex Web's own
-  "start existing play queue" action handler and its `appModel`; a fallback
-  uses Plex Web's "queue playback" action on the same queue (ending and
-  resetting an open player first, so it replaces rather than appends). Both
-  were forced and verified live; preflight and the runtime report name the
-  active path (`group play-from-here/player: active = ...`). Force one with
-  `--opt pfh-player=primary|fallback|companion`.
-- **PMS API (B3):** a sorted section `uri` plus `key` yields the visible
-  order from the clicked item on; filters are honoured. Plex Web's own
-  library Play button sends the same `uri` without `key`.
-- **Tooling:** 205 unit tests. CI on GitHub-hosted runners runs gitleaks,
-  lint, tests and the build.
+- **Fixed this session (found live):** Plex Web's background
+  recently-added queries hit the same listing endpoint and could have
+  replaced the visible sort; they are now ignored. Season pages (children
+  listings) are supported.
+- **PMS API:** a sorted section `uri` plus `key` yields the visible order
+  from the clicked item on; filters are honoured. Plex Web's own library
+  Play button sends the same `uri` without `key`.
+- **Tooling:** 224 unit tests. CI on GitHub-hosted runners runs gitleaks,
+  lint, tests and the build, plus the sandbox e2e. The PMS package is cached
+  by release version; no secrets are used.
 
 **Not verified yet (needs the owner's server, see BACKLOG.md):**
 
-- the install path and Plex Web version on the real server (B1/B2);
+- the install path on the real server (B1);
+- updating it to PMS 1.43.5 or later (B2), then its Plex Web version and
+  preflight (B3);
 - e2e auth with a token on a *claimed* server (the storage key in
-  `e2e/auth.ts`, B3);
-- the first real apply (B4).
+  `e2e/auth.ts`, B4);
+- the first real apply (B5).
 
-The companion `playMedia` fallback stays unverified; it runs only if the
-native player is unavailable.
+The weekly breakage canary (B8) is designed but not built.
 
-**Next:** BACKLOG.md B1 → B2 → B3 → B4. Optional: B5 (auto-reapply after
-PMS updates), B6 (e2e in CI on the sandbox).
+**Next:** BACKLOG.md B1 → B2 → B3 → B4 → B5. Optional: B6 (auto-reapply
+after PMS updates), B8 (weekly canary).
 
 ## License
 
