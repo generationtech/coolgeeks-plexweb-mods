@@ -2,6 +2,7 @@
 //   dist/plexweb-mods.js  browser runtime (IIFE) injected into Plex Web
 //   dist/injector.cjs     reapply tool (Node)
 //   dist/preflight.cjs    anchor preflight (Node)
+//   dist/fetch-plex-web.cjs  public Plex Web snapshot tool (Node)
 import { build } from "esbuild";
 import { readFileSync, mkdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -33,6 +34,7 @@ const node = { ...common, platform: "node", format: "cjs", target: ["node22"] };
 const entries = [
   ["injector/cli.ts", "dist/injector.cjs"],
   ["preflight/cli.ts", "dist/preflight.cjs"],
+  ["tools/fetch-plex-web.ts", "dist/fetch-plex-web.cjs"],
 ];
 for (const [entry, outfile] of entries) {
   try {

@@ -21,6 +21,7 @@
     "patches",
     "injector",
     "preflight",
+    "tools",
     "test",
     "e2e",
     "scripts",

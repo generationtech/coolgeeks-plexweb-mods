@@ -4,7 +4,7 @@
  * pristine backup of index.html on the target.
  */
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { cpSync, existsSync, readFileSync } from "node:fs";
 import { posix } from "node:path";
 import type { PreflightResult } from "../preflight/preflight";
 import { hasInjection, injectedVersion, injectTag, lineDiff, removeInjection, renderTag, RUNTIME_FILENAME } from "./html";
@@ -14,7 +14,7 @@ export const BACKUP_SUFFIX = ".plexweb-mods.orig";
 /** Service-worker filenames that would serve a stale index.html (cache-busting check). */
 export const SERVICE_WORKER_CANDIDATES = ["sw.js", "service-worker.js", "serviceworker.js"];
 
-export type Mode = "apply" | "uninstall" | "status";
+export type Mode = "apply" | "uninstall" | "status" | "snapshot";
 
 export interface ReapplyOptions {
   fs: TargetFs;
@@ -35,6 +35,8 @@ export interface ReapplyOptions {
   /** Chunk-global detection used when preflight is skipped. */
   detectChunkGlobals?: (localDir: string) => string[];
   formatPreflight?: (r: PreflightResult) => string;
+  /** snapshot mode: local destination (must be inside a bundle-snapshots/ dir, which is gitignored). */
+  snapshotDir?: string;
   /** Optional HTTP check of the served files (base URL of PMS). */
   verifyUrl?: string;
   fetchImpl?: (url: string) => Promise<{ ok: boolean; status: number; text(): Promise<string>; headers: { get(n: string): string | null } }>;
@@ -121,6 +123,21 @@ async function run(o: ReapplyOptions, say: (s: string) => void, messages: string
     say(`runtime on target: ${(await o.fs.exists(runtimeTarget)) ? "present" : "absent"}; local build version: ${local}`);
     say(`backup: ${(await o.fs.exists(backupPath)) ? backupPath : "none"}`);
     if (injected && injectedVersion(html) !== local) say("note: injected version differs from the local build; run apply to update");
+    return { exitCode: 0, webDir, changed: false, messages };
+  }
+
+  if (o.mode === "snapshot") {
+    const dest = o.snapshotDir ?? "";
+    if (!/(^|[\\/])bundle-snapshots[\\/]/.test(dest)) {
+      throw new ReapplyError(`snapshot destination must be inside a bundle-snapshots/ directory (gitignored), got "${dest}"`);
+    }
+    if (existsSync(dest)) throw new ReapplyError(`snapshot destination already exists: ${dest}`);
+    say(`${dry}copy ${webDir} (read-only) to ${dest}`);
+    if (!o.dryRun) {
+      const view = await o.fs.localView(webDir);
+      cpSync(view, dest, { recursive: true });
+      say(`snapshot written; it contains Plex's code: never commit it. Next: node dist/preflight.cjs --bundle-dir ${dest}`);
+    }
     return { exitCode: 0, webDir, changed: false, messages };
   }
 

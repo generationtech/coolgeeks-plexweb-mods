@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "preflight": "node dist/preflight.cjs",
+    "snapshot:public": "node dist/fetch-plex-web.cjs --url https://app.plex.tv/desktop/",
     "reapply": "sh injector/reapply.sh",
     "secrets": "gitleaks git --redact --no-banner -v .",
     "secrets:staged": "gitleaks git --pre-commit --staged --redact --no-banner -v .",

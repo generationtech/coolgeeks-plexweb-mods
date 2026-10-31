@@ -10,7 +10,7 @@
  * PLEX_DOCKER_CONTAINER, PLEX_URL (only for --verify).
  * Exit codes: 0 ok, 1 error, 2 usage, 3 preflight failed.
  */
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { plugins } from "../patches/index";
 import { detectChunkGlobalsInDir } from "../preflight/extract";
 import { formatPreflight, runPreflight } from "../preflight/preflight";
@@ -23,6 +23,7 @@ options:
   --dry-run            print planned changes (with a diff) and change nothing
   --uninstall          remove the injected tag and runtime file (restores index.html)
   --status             show whether Plex Web is injected and with which version
+  --snapshot [DIR]     copy the server's Plex Web (read-only) into bundle-snapshots/ for research
   --force              apply even if preflight reports anchor failures
   --skip-preflight     do not run the anchor preflight before applying
   --no-banner          never show the on-page failure banner (console only)
@@ -52,6 +53,7 @@ async function main() {
   let webDir = process.env.PLEX_WEB_DIR || undefined;
   let container = process.env.PLEX_DOCKER_CONTAINER || "plex";
   let runtimePath = resolve(__dirname, "plexweb-mods.js");
+  let snapshotDir: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
@@ -59,6 +61,10 @@ async function main() {
     if (a === "--dry-run") dryRun = true;
     else if (a === "--uninstall") mode = "uninstall";
     else if (a === "--status") mode = "status";
+    else if (a === "--snapshot") {
+      mode = "snapshot";
+      if (args[i + 1] && !args[i + 1]!.startsWith("--")) snapshotDir = resolve(args[++i]!);
+    }
     else if (a === "--force") force = true;
     else if (a === "--skip-preflight") skipPreflight = true;
     else if (a === "--no-banner") banner = false;
@@ -80,6 +86,10 @@ async function main() {
   if (installType !== "linux" && installType !== "docker") fail(`PLEX_INSTALL_TYPE must be linux or docker, got "${installType}"`);
   if (verify && !process.env.PLEX_URL) fail("--verify needs PLEX_URL");
 
+  if (mode === "snapshot" && !snapshotDir) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    snapshotDir = join(dirname(__dirname), "bundle-snapshots", `${installType}-${stamp}`);
+  }
   const fs = installType === "docker" ? new DockerFs(container) : new LocalFs();
   try {
     const result = await reapply({
@@ -97,6 +107,7 @@ async function main() {
       detectChunkGlobals: detectChunkGlobalsInDir,
       formatPreflight,
       ...(verify ? { verifyUrl: process.env.PLEX_URL! } : {}),
+      ...(snapshotDir ? { snapshotDir } : {}),
       log: (line) => console.log(line),
     });
     process.exit(result.exitCode);

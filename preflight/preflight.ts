@@ -6,7 +6,7 @@ import { parse } from "acorn";
 import { formatReport, PatchSession, type PatchReport } from "../runtime/engine";
 import { factoryToExpression } from "../runtime/factory";
 import type { PluginDef } from "../runtime/types";
-import { scanBundleDir } from "./extract";
+import { scanBundleDir, type BundleScan } from "./extract";
 
 export interface PreflightResult {
   dir: string;
@@ -75,5 +75,39 @@ export function formatPreflight(r: PreflightResult): string {
       ? "RESULT: all required anchors resolved (export-capture shapes are only checked at runtime)."
       : `RESULT: ${r.report.failures.length} required anchor failure(s). Do not apply until fixed (or pass --force to the injector).`,
   );
+  return lines.join("\n");
+}
+
+export interface FindResult {
+  needle: string;
+  /** Modules whose source contains the needle (ids and files only, never code). */
+  modules: Array<{ id: string; file: string; count: number }>;
+}
+
+/**
+ * Research helper: which modules contain each short string? Prints module
+ * ids, files and occurrence counts only, so findings can be written up
+ * without copying Plex code.
+ */
+export function findInBundle(dir: string, needles: readonly string[], scan: BundleScan = scanBundleDir(dir)): FindResult[] {
+  return needles.map((needle) => ({
+    needle,
+    modules: scan.modules
+      .map((m) => ({ id: m.id, file: m.file, count: m.source.split(needle).length - 1 }))
+      .filter((m) => m.count > 0),
+  }));
+}
+
+export function formatFind(results: readonly FindResult[]): string {
+  const lines: string[] = [];
+  for (const r of results) {
+    lines.push(`${JSON.stringify(r.needle)}: ${r.modules.length} module(s)`);
+    for (const m of r.modules) lines.push(`  ${m.id} (${m.file}) x${m.count}`);
+  }
+  if (results.length > 1) {
+    const sets = results.map((r) => new Set(r.modules.map((m) => m.id)));
+    const all = [...sets[0]!].filter((id) => sets.every((s) => s.has(id)));
+    lines.push(`modules containing ALL of them: ${all.join(", ") || "(none)"}`);
+  }
   return lines.join("\n");
 }
