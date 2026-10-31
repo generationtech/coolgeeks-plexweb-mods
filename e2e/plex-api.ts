@@ -34,6 +34,18 @@ export class PlexApi {
     return (body.MediaContainer.Metadata ?? []).map((m: any) => String(m.ratingKey));
   }
 
+  /** Rating keys of a container's children (e.g. a season's episodes), in server order. */
+  async childrenKeys(parentRatingKey: string): Promise<string[]> {
+    const body = await this.json(`${this.baseUrl}/library/metadata/${parentRatingKey}/children`);
+    return (body.MediaContainer.Metadata ?? []).map((m: any) => String(m.ratingKey));
+  }
+
+  /** Raw MediaContainer of GET /playQueues/<id> (window omitted = the server's default window). */
+  async playQueueRaw(id: string, window?: number): Promise<any> {
+    const req = buildGetPlayQueueRequest(this.baseUrl, id, { ...(window !== undefined ? { window } : {}), own: true, headers: this.headers() });
+    return (await this.json(req.url)).MediaContainer;
+  }
+
   async playQueue(id: string, window = 200): Promise<CreatedPlayQueue> {
     const req = buildGetPlayQueueRequest(this.baseUrl, id, { window, own: true, headers: this.headers() });
     return parsePlayQueue(await this.json(req.url));

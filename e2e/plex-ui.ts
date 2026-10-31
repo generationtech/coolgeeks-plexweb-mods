@@ -12,18 +12,26 @@ export const UI = {
   finishSetup: "Finish Setup",
   /** Notice shown for an unclaimed server; dismissible. */
   dismissUnclaimed: "Don't show this again",
-  /** Sort popup button on a library grid; its text is the current sort ("By Title"). */
+  /** Sort popup button (grid and Detail View); its text is the current sort ("By Title"). */
   sortButton: { css: 'button[aria-haspopup="true"]', text: /^By / },
-  /** A poster card in the grid. */
+  /** Table View has no sort popup: its column headers ("Title", "Year") are links that sort. */
+  /** View-style popup ("Grid View", "Detail View", "Table View"). */
+  viewButton: '[data-testid="toolbarView"]',
+  /** A poster card in a grid. */
   card: '[data-testid="cellItem"]',
-  /** The card's "..." button. */
+  /** The "..." button of a card or row (rows show it on hover). */
   moreButton: 'button[aria-label="More Actions"]',
   /** Something only present while the player is up. */
   player: "video",
+  /** Player controls (aria-labels). */
+  playerPause: "Pause",
+  playerNext: "Next",
+  playerPrevious: "Previous",
   playFromHere: '[data-plexweb-mods="play-from-here"]',
 } as const;
 
 const itemLinkSelector = PLEX_ANCHORS.dom.itemLinkSelector.value;
+const itemLinkFor = (rk: string) => `a[href*="%2Flibrary%2Fmetadata%2F${rk}&"], a[href$="%2Flibrary%2Fmetadata%2F${rk}"]`;
 const itemKeyPattern = PLEX_ANCHORS.dom.itemKeyPattern.value;
 
 export class PlexWeb {
@@ -33,21 +41,25 @@ export class PlexWeb {
     return `${baseUrl}/web/index.html#!/media/${machineIdentifier}/com.plexapp.plugins.library?source=${sectionId}&pivot=library`;
   }
 
-  /** Opens the library grid, getting past first-run pages on a fresh profile. */
-  async openLibrary(url: string): Promise<void> {
+  detailsUrl(baseUrl: string, machineIdentifier: string, ratingKey: string): string {
+    return `${baseUrl}/web/index.html#!/server/${machineIdentifier}/details?key=${encodeURIComponent(`/library/metadata/${ratingKey}`)}`;
+  }
+
+  /** Opens a page, getting past first-run pages on a fresh profile; waits for item links. */
+  async open(url: string): Promise<void> {
     await this.page.goto(url);
     const setup = this.page.getByText(UI.finishSetup, { exact: true });
-    const grid = this.page.locator(UI.card).first();
-    await setup.or(grid).or(this.page.getByText(UI.dismissUnclaimed)).first().waitFor({ timeout: 45_000 });
+    const items = this.page.locator(itemLinkSelector).first();
+    const dismiss = this.page.getByText(UI.dismissUnclaimed);
+    await setup.or(items).or(dismiss).first().waitFor({ timeout: 45_000 });
     if (await setup.count()) {
       await setup.first().click();
       await this.page.waitForURL((u) => !u.hash.includes("client-setup"));
       await this.page.goto(url);
     }
-    const dismiss = this.page.getByText(UI.dismissUnclaimed);
-    await dismiss.or(grid).first().waitFor({ timeout: 45_000 });
+    await dismiss.or(items).first().waitFor({ timeout: 45_000 });
     if (await dismiss.count()) await dismiss.first().click();
-    await grid.waitFor({ timeout: 45_000 });
+    await items.waitFor({ timeout: 45_000 });
   }
 
   async waitForRuntime(): Promise<void> {
@@ -55,11 +67,21 @@ export class PlexWeb {
   }
 
   async applySort(label: string): Promise<void> {
-    await this.page.locator(UI.sortButton.css, { hasText: UI.sortButton.text }).first().click();
-    await this.page.getByRole("menuitem", { name: label, exact: true }).first().click();
+    const popup = this.page.locator(UI.sortButton.css, { hasText: UI.sortButton.text }).first();
+    if (await popup.isVisible().catch(() => false)) {
+      await popup.click();
+      await this.page.getByRole("menuitem", { name: label, exact: true }).first().click();
+    } else {
+      await this.page.getByRole("link", { name: label, exact: true }).first().click(); // Table View column header
+    }
   }
 
-  /** Rating keys of the poster cards currently in the DOM, in document order. */
+  async setViewStyle(name: "Grid View" | "Detail View" | "Table View"): Promise<void> {
+    await this.page.locator(UI.viewButton).click();
+    await this.page.getByRole("menuitem", { name: new RegExp(`^${name}`) }).first().click();
+  }
+
+  /** Rating keys of the items currently in the DOM, in document order. */
   async visibleRatingKeys(): Promise<string[]> {
     return this.page.$$eval(
       itemLinkSelector,
@@ -76,12 +98,37 @@ export class PlexWeb {
     );
   }
 
-  /** Opens the "..." menu of the card for `ratingKey` and clicks "Play from here". */
+  /** Scrolls the list until the item's link is rendered (Plex Web renders long lists lazily). */
+  async revealItem(ratingKey: string): Promise<void> {
+    const link = this.page.locator(itemLinkFor(ratingKey)).first();
+    const { width, height } = this.page.viewportSize() ?? { width: 1280, height: 720 };
+    for (let i = 0; i < 80 && !(await link.isVisible().catch(() => false)); i++) {
+      if ((await link.count()) > 0) {
+        await link.scrollIntoViewIfNeeded().catch(() => {});
+        continue;
+      }
+      await this.page.mouse.move(width * 0.6, height * 0.6);
+      await this.page.mouse.wheel(0, height * 0.5);
+      await this.page.waitForTimeout(250);
+    }
+    await link.waitFor({ state: "visible", timeout: 5_000 });
+  }
+
+  /** Opens the "..." menu of the card/row for `ratingKey` (any view style) and clicks "Play from here". */
   async playFromHere(ratingKey: string): Promise<void> {
-    const card = this.page.locator(UI.card).filter({ has: this.page.locator(`a[href*="%2Flibrary%2Fmetadata%2F${ratingKey}&"], a[href$="%2Flibrary%2Fmetadata%2F${ratingKey}"]`) }).first();
-    await card.scrollIntoViewIfNeeded();
-    await card.hover();
-    await card.locator(UI.moreButton).click();
+    await this.revealItem(ratingKey);
+    const link = this.page.locator(itemLinkFor(ratingKey)).first();
+    await link.hover();
+    const row = link.locator(`xpath=ancestor::*[.//button[@aria-label="More Actions"]][1]`);
+    await row.locator(UI.moreButton).first().click();
     await this.page.locator(UI.playFromHere).click();
+  }
+
+  /** Clicks a player control and waits for Plex Web to report a different item in /:/timeline. */
+  async playerStep(control: string, currentRatingKey: () => string | undefined): Promise<string | undefined> {
+    const before = currentRatingKey();
+    await this.page.getByRole("button", { name: control, exact: true }).click();
+    for (let i = 0; i < 60 && currentRatingKey() === before; i++) await this.page.waitForTimeout(100);
+    return currentRatingKey();
   }
 }

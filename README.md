@@ -88,14 +88,20 @@ _Last updated: 2026-10-31 (session 2)._
 **"Play from here" works end to end against a real Plex Media Server.**
 Tested on PMS 1.43.5.11079 with its bundled Plex Web 4.162.1, run in a
 throwaway sandbox (unclaimed, localhost only, no account; reproducible with
-`scripts/sandbox-pms.sh start`). The e2e test passed all 12 runs after one flake fix (both injection modes):
+`scripts/sandbox-pms.sh start`). The e2e suite (6 tests) passes in every
+mode tried: runtime injected by request interception or applied by the
+injector, with the primary player path or the fallback forced. It covers:
 
-1. sort the library grid by Year;
-2. click "Play from here" in a mid-list card's "..." menu (it appears under
-   "Play Next");
-3. `GET /playQueues/<id>` matches the visible order from that item on;
-4. playback starts in Plex Web's own player;
-5. the runtime anchor report is clean.
+1. the library grid, Detail View and Table View, each after a non-default sort;
+2. a TV season page ("Play from here" on an episode);
+3. an Other Videos library;
+4. a 300-item library: PMS windows the queue (41 of 300 items by default),
+   and Plex Web's Next/Previous follow the visible sort across both window
+   edges;
+5. in every test, `GET /playQueues/<id>` selects the clicked item at its
+   visible index, with the previous and next items in visible order;
+   playback starts in Plex Web's own player, and the runtime anchor report
+   is clean.
 
 The injector applied it to that PMS, verified it over HTTP, re-ran with no
 changes, and uninstalled byte for byte.
