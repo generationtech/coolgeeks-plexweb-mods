@@ -46,12 +46,12 @@ export const PLEX_ANCHORS = {
      */
     queuePlaybackAction: a(
       "ui/player/playerLifecycle/queuePlayback",
-      "unverified",
-      `${VERIFIED_AGAINST}: preflight locates exactly 1 module; to be proven by a forced live run.`,
+      "verified",
+      `${VERIFIED_AGAINST}: preflight locates exactly 1 module; forced live run (pfh-player=fallback) played our queue unpaused.`,
     ),
     /** Fallback: actions used to clear an open player first (else queuePlayback appends to its queue). */
-    endPlaybackAction: a("ui/player/playerLifecycle/endPlayback", "unverified", `${VERIFIED_AGAINST}: same handler map.`),
-    resetPlayerAction: a("ui/player/playerControls/resetAndClosePlayer", "unverified", `${VERIFIED_AGAINST}: same handler map.`),
+    endPlaybackAction: a("ui/player/playerLifecycle/endPlayback", "verified", `${VERIFIED_AGAINST}: same handler map; forced live run replaced an open queue.`),
+    resetPlayerAction: a("ui/player/playerControls/resetAndClosePlayer", "verified", `${VERIFIED_AGAINST}: same handler map; forced live run replaced an open queue.`),
     /** Service name of Plex Web's root model, looked up through its service registry. */
     appModelService: a('"appModel"', "verified", `${VERIFIED_AGAINST}: occurs once in the module selected above.`),
     /** Item context-menu labels (English source strings are also the localization keys). */
@@ -70,9 +70,9 @@ export const PLEX_ANCHORS = {
     populate: a("populate", "verified", `${VERIFIED_AGAINST}: async loader on collections/models; live run.`),
     libraryProviderIdentifier: a("com.plexapp.plugins.library", "verified", `${VERIFIED_AGAINST}: library provider identifier constant.`),
     /** Fallback path: where the open player lives (appModel.get(ui).get(<type>Player).get(playQueue)). */
-    uiAttr: a("ui", "unverified", `${VERIFIED_AGAINST}: appModel attribute holding UI models.`),
-    playerModels: a({ video: "audioVideoPlayer", audio: "audioVideoPlayer", photo: "photoPlayer" } as const, "unverified", `${VERIFIED_AGAINST}: player model names per play queue type.`),
-    playerQueueAttr: a("playQueue", "unverified", `${VERIFIED_AGAINST}: player model attribute holding the open queue.`),
+    uiAttr: a("ui", "verified", `${VERIFIED_AGAINST}: appModel attribute holding UI models; live run.`),
+    playerModels: a({ video: "audioVideoPlayer", audio: "audioVideoPlayer", photo: "photoPlayer" } as const, "verified", `${VERIFIED_AGAINST}: player model names per play queue type (video verified live).`),
+    playerQueueAttr: a("playQueue", "verified", `${VERIFIED_AGAINST}: player model attribute holding the open queue; live run.`),
   },
 
   /** DOM structure of Plex Web (consumed by dom-menu.ts). */
