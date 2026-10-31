@@ -3,7 +3,7 @@
  *   visible listing + clicked item -> POST /playQueues -> native player.
  */
 import type { PlaybackPath, PlexBindings } from "./bindings";
-import { buildCreatePlayQueueRequest, parsePlayQueue, type CreatedPlayQueue, type ItemRef } from "./playqueue";
+import { buildCreatePlayQueueRequest, parsePlayQueue, type CreatedPlayQueue, type ItemRef, type PlayQueueType } from "./playqueue";
 
 export interface FlowDeps {
   bindings: PlexBindings;
@@ -60,7 +60,8 @@ export async function runPlayFromHere(deps: FlowDeps, item: ItemRef): Promise<Fl
   }
 
   try {
-    const playback = await deps.bindings.startPlayback({ queue, server, item });
+    const playQueueType = (new URL(req.url).searchParams.get("type") ?? "video") as PlayQueueType;
+    const playback = await deps.bindings.startPlayback({ queue, server, item, playQueueType });
     return { queue, playback };
   } catch (err) {
     throw new PlayFromHereError("playback", (err as Error).message, { cause: err });

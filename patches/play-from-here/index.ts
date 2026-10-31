@@ -14,6 +14,7 @@ import type { NativePlayer } from "./bindings";
 import { createDefaultBindings, parseRoute } from "./default-bindings";
 import { createDomMenuIntegration } from "./dom-menu";
 import { runPlayFromHere, type FlowResult } from "./flow";
+import { createNativePlayer, findHandlerMap, type NativePlayerState } from "./native-player";
 import { installNetworkObserver, ListingTracker } from "./network-observer";
 import type { ItemRef } from "./playqueue";
 import { PLEX_ANCHORS } from "./plex-anchors";
@@ -32,48 +33,54 @@ export interface PlayFromHerePlugin extends PluginDef {
   lastError: string | null;
   diagnostics: {
     contextMenuModules: string[];
-    nativePlayerCandidates: Array<{ moduleId: string; exportKeys: string[] }>;
   };
+  /** State filled by the native-player patch. */
+  native: NativePlayerState;
+  /** Called from the patched module (via $self) with its appModel lookup. */
+  registerAppModelGetter(getter: () => unknown): void;
 }
 
-function exportKeys(exports: unknown): string[] {
-  if (!exports || (typeof exports !== "object" && typeof exports !== "function")) return [];
-  try {
-    return Object.keys(exports as object).slice(0, 50);
-  } catch {
-    return [];
-  }
-}
-
-/** Patch definitions. Anchors come from plex-anchors.ts (unverified candidates for now). */
-export function createPatches(plugin: Pick<PlayFromHerePlugin, "diagnostics">): PatchDef[] {
+/**
+ * Patch definitions (anchors from plex-anchors.ts):
+ *  - native-player: the module defining the "start existing play queue"
+ *    action. One replacement exposes the module's own appModel lookup to
+ *    $self (minified names are captured from the code, never hard-coded);
+ *    an export capture finds the action-handler map by its action-type key.
+ *  - context-menu-module: optional diagnostics (the menu entry is added by
+ *    the DOM integration).
+ */
+export function createPatches(plugin: Pick<PlayFromHerePlugin, "diagnostics" | "native">): PatchDef[] {
   const { bundle } = PLEX_ANCHORS;
+  const action = bundle.startExistingPlayQueueAction.value;
   return [
     {
-      id: `${PLUGIN_NAME}/context-menu-module`,
-      find: [...bundle.contextMenuModule.value],
-      optional: true,
-      lazy: true,
-      all: true,
-      note: `${bundle.contextMenuModule.status}: diagnostics only; the menu entry itself is added by the DOM integration`,
-      onExports: (_exports, moduleId) => {
-        plugin.diagnostics.contextMenuModules.push(moduleId);
+      id: `${PLUGIN_NAME}/native-player`,
+      find: [`"${action}"`, bundle.appModelService.value],
+      note: `${bundle.startExistingPlayQueueAction.status}: ${bundle.startExistingPlayQueueAction.source}`,
+      replacements: [
+        {
+          // Insert, right after the factory's "use strict", a getter that calls the
+          // same service lookup this module uses for ${bundle.appModelService.value}.
+          match: new RegExp(`"use strict";(?=[\\s\\S]*?\\(0,([\\w$]+)\\.([\\w$]+)\\)\\(${bundle.appModelService.value}\\))`),
+          replace: `"use strict";$self.registerAppModelGetter(()=>(0,$1.$2)(${bundle.appModelService.value}));`,
+        },
+      ],
+      onExports: (exports) => {
+        const map = findHandlerMap(exports, action);
+        if (!map) return false;
+        plugin.native.handlers = map;
+        return true;
       },
     },
     {
-      id: `${PLUGIN_NAME}/native-player`,
-      find: [...bundle.nativePlayerModule.value],
+      id: `${PLUGIN_NAME}/context-menu-module`,
+      find: bundle.contextMenuLabels.value.map((l) => `"${l}"`),
+      optional: true,
       lazy: true,
       all: true,
-      note: `${bundle.nativePlayerModule.status}: candidate anchors for the module that starts Plex Web's player`,
-      todo:
-        "native player adapter not written: identify the entry point in a real bundle (BACKLOG B5), narrow the anchors, " +
-        "then register a NativePlayer from onExports and remove this todo",
-      onExports: (exports, moduleId) => {
-        plugin.diagnostics.nativePlayerCandidates.push({ moduleId, exportKeys: exportKeys(exports) });
-        // Adapter goes here once the entry point is known: build a NativePlayer
-        // from these exports, call registerNativePlayer(), and return true.
-        return false;
+      note: `${bundle.contextMenuLabels.status}: diagnostics only; the menu entry itself is added by the DOM integration`,
+      onExports: (_exports, moduleId) => {
+        plugin.diagnostics.contextMenuModules.push(moduleId);
       },
     },
   ];
@@ -87,10 +94,15 @@ const plugin: PlayFromHerePlugin = {
   tracker: null,
   lastResult: null,
   lastError: null,
-  diagnostics: { contextMenuModules: [], nativePlayerCandidates: [] },
+  diagnostics: { contextMenuModules: [] },
+  native: { handlers: null, getAppModel: null },
 
   registerNativePlayer(player: NativePlayer) {
     plugin.nativePlayer = player;
+  },
+
+  registerAppModelGetter(getter: () => unknown) {
+    plugin.native.getAppModel = getter;
   },
 
   async play(_item: ItemRef): Promise<FlowResult | null> {
@@ -115,7 +127,7 @@ const plugin: PlayFromHerePlugin = {
       tracker,
       fetch: (url, init) => win.fetch(url, init),
       playback: {
-        nativePlayer: () => plugin.nativePlayer,
+        nativePlayer: () => plugin.nativePlayer ?? (plugin.native.handlers && plugin.native.getAppModel ? createNativePlayer(plugin.native) : null),
         companionEnabled: opt["pfh-companion"] !== "off",
         fetch: (url, init) => win.fetch(url, init),
         nextCommandId: () => ++commandId,
@@ -142,7 +154,6 @@ const plugin: PlayFromHerePlugin = {
     const { dom } = PLEX_ANCHORS;
     createDomMenuIntegration({
       doc: win.document,
-      menuSelector: dom.menuSelector.value,
       menuItemSelector: dom.menuItemSelector.value,
       anchorLabels: dom.menuAnchorLabels.value,
       itemLinkSelector: dom.itemLinkSelector.value,

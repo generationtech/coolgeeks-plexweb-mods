@@ -14,12 +14,14 @@ function grid() {
     </div>`;
 }
 
-function openMenu(labels = ["Play", "Play Next", "Add to Up Next", "Mark as Played"]) {
-  const menu = document.createElement("div");
-  menu.setAttribute("role", "menu");
-  menu.innerHTML = labels.map((l, i) => `<div role="menuitem" id="mi${i}" tabindex="-1"><span class="icon"></span><span>${l}</span></div>`).join("");
-  document.body.appendChild(menu);
-  return menu;
+/** Mirrors Plex Web 4.162.1: a portal div > menu div > scroller div > role=menuitem buttons (no role=menu). */
+function openMenu(labels = ["Watch Together...", "Play Next", "Add to Queue", "Mark as Watched"]) {
+  const portal = document.createElement("div");
+  portal.innerHTML = `<div class="Menu-menu"><div class="Menu-menuScroller">${labels
+    .map((l, i) => `<button role="menuitem" data-testid="dropdownItem" id="mi${i}" tabindex="-1">${l}</button>`)
+    .join("")}</div></div>`;
+  document.body.appendChild(portal);
+  return portal.querySelector(".Menu-menuScroller") as HTMLElement;
 }
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -44,7 +46,6 @@ describe("DOM menu integration", () => {
     const onSelect = vi.fn();
     uninstall = createDomMenuIntegration({
       doc: document,
-      menuSelector: dom.menuSelector.value,
       menuItemSelector: dom.menuItemSelector.value,
       anchorLabels: dom.menuAnchorLabels.value,
       itemLinkSelector: dom.itemLinkSelector.value,
@@ -60,7 +61,7 @@ describe("DOM menu integration", () => {
     const menu = openMenu();
     await flush();
     const labels = [...menu.querySelectorAll('[role="menuitem"]')].map((e) => e.textContent);
-    expect(labels).toEqual(["Play", "Play Next", "Play from here", "Add to Up Next", "Mark as Played"]);
+    expect(labels).toEqual(["Watch Together...", "Play Next", "Play from here", "Add to Queue", "Mark as Watched"]);
     const ours = menu.querySelector("[data-plexweb-mods]")!;
     expect(ours.id).toBe("");
     expect(ours.getAttribute("tabindex")).toBe("-1");
@@ -88,9 +89,9 @@ describe("DOM menu integration", () => {
     grid();
     install();
     document.getElementById("m1")!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-    const menu = openMenu(["Play", "Add to Up Next"]);
+    const menu = openMenu(["Play", "Add to Queue"]);
     await flush();
-    expect([...menu.children].map((e) => e.textContent)).toEqual(["Play", "Add to Up Next", "Play from here"]);
+    expect([...menu.children].map((e) => e.textContent)).toEqual(["Play", "Add to Queue", "Play from here"]);
   });
 
   it.each([
@@ -103,6 +104,15 @@ describe("DOM menu integration", () => {
     const menu = openMenu();
     await flush();
     expect(menu.querySelector("[data-plexweb-mods]")).toBeNull();
+  });
+
+  it("anchors on the first configured label even when a later one renders first", async () => {
+    grid();
+    install();
+    document.getElementById("m1")!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    const menu = openMenu(["Add to Queue", "Play Next"]);
+    await flush();
+    expect([...menu.children].map((e) => e.textContent)).toEqual(["Add to Queue", "Play Next", "Play from here"]);
   });
 
   it("ignores menus without an anchor label", async () => {

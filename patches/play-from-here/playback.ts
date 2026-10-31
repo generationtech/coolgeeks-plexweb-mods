@@ -12,6 +12,7 @@
 import { BindingUnavailableError, type NativePlayer, type PlaybackPath, type PlaybackRequest } from "./bindings";
 import { metadataKey, normalizeBaseUrl, playQueueTypeFor, serializeQuery, type HttpRequest } from "./playqueue";
 
+
 export interface CompanionOptions {
   /** Plex Web's X-Plex-Client-Identifier (the player to target). */
   targetClientIdentifier: string;
@@ -23,7 +24,7 @@ export interface CompanionOptions {
 export function buildCompanionPlayMediaRequest(req: PlaybackRequest, opts: CompanionOptions): HttpRequest {
   const base = new URL(normalizeBaseUrl(req.server.baseUrl));
   const q = new URLSearchParams();
-  q.set("type", playQueueTypeFor(opts.itemType ?? req.item.type));
+  q.set("type", opts.itemType !== undefined ? playQueueTypeFor(opts.itemType) : req.playQueueType);
   q.set("providerIdentifier", "com.plexapp.plugins.library");
   q.set("containerKey", `/playQueues/${req.queue.id}?own=1&window=200`);
   q.set("key", metadataKey(req.queue.selectedRatingKey ?? req.item.ratingKey));

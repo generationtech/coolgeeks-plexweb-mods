@@ -1,6 +1,6 @@
 /**
  * DOM-level menu integration: adds "Play from here" right after an existing
- * entry (e.g. "Play Next") whenever Plex Web opens an item context menu, and
+ * entry (e.g. "Play Next") whenever Plex Web renders an item menu, and
  * identifies the item from the card the user opened the menu on.
  *
  * Plex-coupled only through the selectors/labels passed in (see
@@ -11,7 +11,7 @@ import type { ItemRef } from "./playqueue";
 
 export interface DomMenuOptions {
   doc: Document;
-  menuSelector: string;
+  /** Menu entries; the menu is the parent element of the anchor entry. */
   menuItemSelector: string;
   anchorLabels: readonly string[];
   itemLinkSelector: string;
@@ -71,20 +71,27 @@ export function createDomMenuIntegration(opts: DomMenuOptions): MenuIntegration 
 
       const remember = (ev: Event) => {
         const el = ev.target instanceof doc.defaultView!.Element ? (ev.target as Element) : null;
-        if (!el || el.closest(`[${MENU_ITEM_MARKER}]`) || el.closest(opts.menuSelector)) return;
+        if (!el || el.closest(`[${MENU_ITEM_MARKER}]`) || el.closest(opts.menuItemSelector)) return;
         const item = findItemForElement(el, opts.itemLinkSelector, opts.itemKeyPattern);
         if (item) target = { item, at: now() };
       };
 
-      const decorate = (menu: Element) => {
-        if (menu.querySelector(`[${MENU_ITEM_MARKER}="${MARKER_VALUE}"]`)) return;
-        const items = Array.from(menu.querySelectorAll(opts.menuItemSelector));
-        let anchor: Element | undefined;
+      const isAnchor = (el: Element) => opts.anchorLabels.includes(norm(el.textContent));
+
+      /** Inserts our entry after `anchor` (an existing entry such as "Play Next"). */
+      const decorate = (anchor: Element) => {
+        const menu = anchor.parentElement;
+        if (!menu || menu.querySelector(`:scope > [${MENU_ITEM_MARKER}="${MARKER_VALUE}"]`)) return;
+        // Prefer the first label in anchorLabels when several are present.
+        const siblings = Array.from(menu.children).filter((c) => c.matches(opts.menuItemSelector));
         for (const l of opts.anchorLabels) {
-          anchor = items.find((i) => norm(i.textContent) === l);
-          if (anchor) break;
+          const first = siblings.find((i) => norm(i.textContent) === l);
+          if (first) {
+            if (first !== anchor) return decorate(first);
+            break;
+          }
         }
-        if (!anchor || !target || now() - target.at > ttl || !isAvailable()) return;
+        if (!target || now() - target.at > ttl || !isAvailable()) return;
         const item = target.item;
         const clone = anchor.cloneNode(true) as Element;
         clone.removeAttribute("id");
@@ -114,11 +121,10 @@ export function createDomMenuIntegration(opts: DomMenuOptions): MenuIntegration 
       const scan = (node: Node) => {
         if (!(node instanceof doc.defaultView!.Element)) return;
         const el = node as Element;
-        if (el.matches(opts.menuSelector)) decorate(el);
-        el.querySelectorAll(opts.menuSelector).forEach(decorate);
-        // menu items rendered into an already-present menu container
-        const menu = el.closest(opts.menuSelector);
-        if (menu) decorate(menu);
+        const items: Element[] = el.matches(opts.menuItemSelector) ? [el] : Array.from(el.querySelectorAll(opts.menuItemSelector));
+        const own = el.closest(opts.menuItemSelector);
+        if (own && !items.includes(own)) items.push(own); // text rendered into an existing entry
+        for (const i of items) if (!i.hasAttribute(MENU_ITEM_MARKER) && isAnchor(i)) decorate(i);
       };
 
       const observer = new doc.defaultView!.MutationObserver((records) => {

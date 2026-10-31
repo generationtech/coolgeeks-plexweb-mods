@@ -1,16 +1,15 @@
 /**
  * EVERY Plex-coupled assumption of "Play from here" lives in this file.
  *
- * Swap values here (and only here) when research against a real Plex Web
- * bundle or a live server confirms or corrects them. Each entry carries a
- * status:
+ * Swap values here (and only here) when Plex Web changes. Each entry carries
+ * a status:
  *   - "documented": public PMS API surface, community-documented, stable.
- *   - "unverified": a candidate that still has to be proven against a real
- *                   bundle/server (see BACKLOG.md and docs/anchor-research.md).
- *   - "verified":   proven by preflight or e2e; note the Plex Web version.
+ *   - "unverified": a candidate that still has to be proven.
+ *   - "verified":   proven by preflight and/or a live run; `source` names the
+ *                   Plex Web version and how it was checked.
  *
  * Only short anchor strings belong here (a few words, localization keys, API
- * paths). Never paste Plex code.
+ * paths, attribute names). Never paste Plex code.
  */
 
 export type AnchorStatus = "documented" | "unverified" | "verified";
@@ -18,68 +17,78 @@ export type AnchorStatus = "documented" | "unverified" | "verified";
 export interface Anchor<T> {
   readonly value: T;
   readonly status: AnchorStatus;
-  /** Where the value comes from / how to verify it. */
+  /** Where the value comes from / how it was verified. */
   readonly source: string;
 }
 
 const a = <T>(value: T, status: AnchorStatus, source: string): Anchor<T> => ({ value, status, source });
 
+/** Plex Web build the "verified" entries were checked against. */
+export const VERIFIED_AGAINST = "Plex Web 4.162.1 (PMS 1.43.5.11079)";
+
 export const PLEX_ANCHORS = {
   /** Strings inside Plex Web's webpack modules (consumed by the patch engine). */
   bundle: {
     /**
-     * Module that defines the item context-menu entries. Located for
-     * diagnostics/future bundle-level menu patching; the shipped UI path is
-     * the DOM integration below.
+     * Action type that starts playback of an existing play queue. Selects
+     * exactly one module, whose exports include the handler map keyed by it.
      */
-    contextMenuModule: a(
-      ["Play Next", "Add to Up Next"] as const,
-      "unverified",
-      "Visible menu labels in Plex Web; whether they appear verbatim in the same module is unknown (BACKLOG: preflight).",
+    startExistingPlayQueueAction: a(
+      "ui/player/playerLifecycle/startExistingPlayQueuePlayback",
+      "verified",
+      `${VERIFIED_AGAINST}: preflight locates exactly 1 module; live run started playback through it.`,
     ),
-    /**
-     * Module that starts Plex Web's own player for a play queue. Candidate
-     * strings: PMS play-queue response fields any such module must read.
-     */
-    nativePlayerModule: a(
-      ["playQueueSelectedItemID", "/playQueues"] as const,
-      "unverified",
-      "PMS play queue API field/path names; likely matches several modules until narrowed with a player-specific string.",
+    /** Service name of Plex Web's root model, looked up through its service registry. */
+    appModelService: a('"appModel"', "verified", `${VERIFIED_AGAINST}: occurs once in the module selected above.`),
+    /** Item context-menu labels (English source strings are also the localization keys). */
+    contextMenuLabels: a(
+      ["Play Next", "Add to Queue"] as const,
+      "verified",
+      `${VERIFIED_AGAINST}: both labels in the same 6 modules; "Add to Up Next" no longer exists.`,
     ),
+  },
+
+  /** Plex Web runtime model API used by the native-player adapter. */
+  appApi: {
+    serversAttr: a("servers", "verified", `${VERIFIED_AGAINST}: appModel attribute holding the server collection; live run.`),
+    populateServer: a("populateServer", "verified", `${VERIFIED_AGAINST}: server collection method (machine identifier -> server model); live run.`),
+    providersAttr: a("providers", "verified", `${VERIFIED_AGAINST}: server attribute holding the provider collection; live run.`),
+    populate: a("populate", "verified", `${VERIFIED_AGAINST}: async loader on collections/models; live run.`),
+    libraryProviderIdentifier: a("com.plexapp.plugins.library", "verified", `${VERIFIED_AGAINST}: library provider identifier constant.`),
   },
 
   /** DOM structure of Plex Web (consumed by dom-menu.ts). */
   dom: {
-    menuSelector: a('[role="menu"]', "unverified", "ARIA role used by most React menu libraries."),
-    menuItemSelector: a('[role="menuitem"]', "unverified", "ARIA role of menu entries."),
-    /** Labels of the existing entry after which "Play from here" is inserted (first match wins). */
-    menuAnchorLabels: a(["Play Next", "Add to Up Next"] as const, "unverified", "Visible English labels; localized UIs need their translations."),
+    /** Menu entries. The menu container has no role; the anchor entry's parent is used. */
+    menuItemSelector: a('[role="menuitem"]', "verified", `${VERIFIED_AGAINST}: menu entries are role=menuitem (testid dropdownItem); live DOM.`),
+    /** Entry after which "Play from here" is inserted (first match wins). */
+    menuAnchorLabels: a(["Play Next", "Add to Queue"] as const, "verified", `${VERIFIED_AGAINST}: English UI; other languages use their translations.`),
     /** Links on poster cards/rows that identify the item. */
-    itemLinkSelector: a('a[href*="%2Flibrary%2Fmetadata%2F"]', "unverified", "Plex Web detail links carry key=/library/metadata/<ratingKey> URL-encoded."),
-    itemKeyPattern: a(/key=%2Flibrary%2Fmetadata%2F(\d+)/, "unverified", "As above."),
+    itemLinkSelector: a('a[href*="%2Flibrary%2Fmetadata%2F"]', "verified", `${VERIFIED_AGAINST}: two links per card (poster, title), same key; live DOM.`),
+    itemKeyPattern: a(/key=%2Flibrary%2Fmetadata%2F(\d+)/, "verified", `${VERIFIED_AGAINST}: #!/server/<id>/details?key=... links; live DOM.`),
   },
 
-  /** Plex Web hash routes (consumed by bindings.ts). */
+  /** Plex Web hash routes (consumed by default-bindings.ts). */
   routes: {
-    /** Library listing route; captures [machineIdentifier, sectionId]. */
+    /** Library grid ("Library" tab) of a section; captures [machineIdentifier, sectionId]. */
     libraryListing: a(
-      /#!\/media\/([^/?#]+)\/com\.plexapp\.plugins\.library\?(?:[^#]*&)?source=(\d+)/,
-      "unverified",
-      "Observed shape of Plex Web library URLs; confirm on the local server.",
+      /#!\/media\/([^/?#]+)\/com\.plexapp\.plugins\.library\?(?=[^#]*\bpivot=library\b)(?:[^#]*&)?source=(\d+)/,
+      "verified",
+      `${VERIFIED_AGAINST}: route /media/:machineIdentifier?/:providerIdentifier with source=<section> and pivot=library; live run.`,
     ),
     /** Any server-scoped route; captures [machineIdentifier]. */
-    serverScoped: a(/#!\/(?:media|server)\/([0-9a-zA-Z-]+)\//, "unverified", "As above."),
+    serverScoped: a(/#!\/(?:media|server)\/([0-9a-zA-Z-]+)\//, "verified", `${VERIFIED_AGAINST}: /media/... and /server/:machineIdentifier/... routes.`),
   },
 
-  /** PMS HTTP API (stable, community-documented). */
+  /** PMS HTTP API. */
   api: {
-    sectionListingPath: a("/library/sections/<id>/all", "documented", "PMS library listing endpoint."),
-    playQueues: a("/playQueues", "documented", "PMS play queue endpoint (POST create, GET read)."),
-    identity: a("/identity", "documented", "Unauthenticated endpoint returning machineIdentifier."),
+    sectionListingPath: a("/library/sections/<id>/all", "verified", "PMS 1.43.5: Plex Web's grid requests it with type, sort and filters; live run."),
+    playQueues: a("/playQueues", "verified", "PMS 1.43.5: POST with a sorted section uri + key returns the visible order from key on; curl and live run."),
+    identity: a("/identity", "verified", "PMS 1.43.5: unauthenticated, returns machineIdentifier."),
     companionPlayMedia: a(
       "/player/playback/playMedia",
       "unverified",
-      "Plex remote-control (companion) command, proxied by PMS to a client via X-Plex-Target-Client-Identifier; works only if Plex Web advertises as a player.",
+      "Fallback only (used when the native player is unavailable); not exercised.",
     ),
   },
 } as const;

@@ -11,3 +11,8 @@ the strings "Play Next" / "Add to Up Next" stand in for anchor candidates.
   Chunk global: `webpackChunkfake_plex`.
 - `wp4/` — classic `webpackJsonp` runtime whose jsonp callback copies chunk
   modules into a private table (strategy B is mandatory there).
+- `wp5-plex-shape/` — the *shape* verified in Plex Web 4.162.1 (see
+  docs/anchor-research.md), written from scratch: a service registry, a module
+  that looks up `"appModel"` through it and exports an action-handler map keyed
+  by the "start existing play queue" action type, and a menu-label module. Lets
+  the play-from-here patches resolve, apply and run end to end in tests.

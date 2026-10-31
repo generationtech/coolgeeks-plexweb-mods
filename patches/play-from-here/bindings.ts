@@ -7,7 +7,7 @@
  * can be swapped for real bundle anchors without touching the core flow in
  * flow.ts or the pure request builder in playqueue.ts.
  */
-import type { CreatedPlayQueue, ItemRef } from "./playqueue";
+import type { CreatedPlayQueue, ItemRef, PlayQueueType } from "./playqueue";
 
 export interface ServerContext {
   /** PMS base URL as the browser reaches it. */
@@ -29,6 +29,8 @@ export interface ListingContext {
 
 export interface PlaybackRequest {
   queue: CreatedPlayQueue;
+  /** "video" | "audio" | "photo", as sent in POST /playQueues. */
+  playQueueType: PlayQueueType;
   server: ServerContext;
   item: ItemRef;
 }

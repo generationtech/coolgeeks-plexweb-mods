@@ -4,7 +4,7 @@ import { createDefaultBindings, parseRoute } from "../patches/play-from-here/def
 import { PlayFromHereError, runPlayFromHere } from "../patches/play-from-here/flow";
 import { ListingTracker } from "../patches/play-from-here/network-observer";
 import { buildCompanionPlayMediaRequest, startPlayback } from "../patches/play-from-here/playback";
-import plugin, { createPatches } from "../patches/play-from-here/index";
+import plugin from "../patches/play-from-here/index";
 import { PatchSession } from "../runtime/engine";
 
 const BASE = "https://plex-server.example:32400";
@@ -36,7 +36,7 @@ describe("runPlayFromHere", () => {
     expect(q.get("uri")).toBe("server://test-machine-identifier/com.plexapp.plugins.library/library/sections/1/all?type=1&sort=year:desc");
     expect(q.get("key")).toBe("/library/metadata/5");
     expect(q.get("shuffle")).toBe("0");
-    expect(startPlayback).toHaveBeenCalledWith(expect.objectContaining({ item: { ratingKey: "5" }, server }));
+    expect(startPlayback).toHaveBeenCalledWith(expect.objectContaining({ item: { ratingKey: "5" }, server, playQueueType: "video" }));
   });
 
   it.each([
@@ -54,7 +54,7 @@ describe("runPlayFromHere", () => {
 });
 
 describe("startPlayback", () => {
-  const req = { queue: { id: "9", items: [], selectedRatingKey: "5" }, server, item: { ratingKey: "5" } };
+  const req = { queue: { id: "9", items: [], selectedRatingKey: "5" }, server, item: { ratingKey: "5" }, playQueueType: "video" as const };
 
   it("prefers the native player hook", async () => {
     const play = vi.fn();
@@ -103,8 +103,9 @@ describe("startPlayback", () => {
 
 describe("parseRoute", () => {
   it.each([
-    ["#!/media/test-machine-identifier/com.plexapp.plugins.library?source=3", { isListing: true, machineIdentifier: "test-machine-identifier", sectionId: "3" }],
+    ["#!/media/test-machine-identifier/com.plexapp.plugins.library?source=3&pivot=library", { isListing: true, machineIdentifier: "test-machine-identifier", sectionId: "3" }],
     ["#!/media/abc123/com.plexapp.plugins.library?pivot=library&source=12", { isListing: true, machineIdentifier: "abc123", sectionId: "12" }],
+    ["#!/media/abc123/com.plexapp.plugins.library?source=12", { isListing: false, machineIdentifier: "abc123" }], // "Recommended" tab
     ["#!/server/abc123/details?key=%2Flibrary%2Fmetadata%2F5", { isListing: false, machineIdentifier: "abc123" }],
     ["#!/", { isListing: false }],
   ])("%s", (hash, expected) => {
@@ -113,7 +114,7 @@ describe("parseRoute", () => {
 });
 
 describe("createDefaultBindings", () => {
-  function setup(hash = "#!/media/route-machine/com.plexapp.plugins.library?source=1", identity: unknown = { MediaContainer: { machineIdentifier: "identity-machine" } }) {
+  function setup(hash = "#!/media/route-machine/com.plexapp.plugins.library?source=1&pivot=library", identity: unknown = { MediaContainer: { machineIdentifier: "identity-machine" } }) {
     const tracker = new ListingTracker(() => `${BASE}/web/index.html`, () => 100);
     tracker.observe({ url: `${BASE}/library/sections/1/all?type=1&sort=year:desc&X-Plex-Token=test-token`, headers: { "X-Plex-Client-Identifier": "test-client" } });
     tracker.observe({ url: `${BASE}/library/sections/2/all?type=2`, headers: {} });
@@ -146,19 +147,11 @@ describe("createDefaultBindings", () => {
 });
 
 describe("play-from-here patch definitions", () => {
-  it("are valid for the engine and carry provenance notes", () => {
+  it("are valid for the engine, verified, and none is marked unfinished", () => {
     const s = new PatchSession([plugin]);
-    expect(s.report().entries.map((e) => e.patchId)).toEqual(["play-from-here/context-menu-module", "play-from-here/native-player"]);
-    expect(s.report().entries.every((e) => e.note?.startsWith("unverified"))).toBe(true);
-  });
-
-  it("native-player candidates are recorded for research and reported as unrecognized", () => {
-    const diag = { contextMenuModules: [] as string[], nativePlayerCandidates: [] as Array<{ moduleId: string; exportKeys: string[] }> };
-    const s = new PatchSession([{ name: "play-from-here", description: "", patches: createPatches({ diagnostics: diag }) }]);
-    const r = s.transform("77", 'x="playQueueSelectedItemID";y="/playQueues"');
-    r.captures.forEach((c) => c.run({ a: 1, b: 2 }, "77"));
-    expect(diag.nativePlayerCandidates).toEqual([{ moduleId: "77", exportKeys: ["a", "b"] }]);
-    expect(s.report().failures.map((f) => f.code)).toEqual(["EXPORTS_UNRECOGNIZED"]);
-    expect(s.report({ final: true }).failures.map((f) => f.code)).toEqual(["EXPORTS_UNRECOGNIZED", "PATCH_INCOMPLETE"]);
+    const entries = s.report().entries;
+    expect(entries.map((e) => e.patchId)).toEqual(["play-from-here/native-player", "play-from-here/context-menu-module"]);
+    expect(entries.every((e) => e.note?.startsWith("verified"))).toBe(true);
+    expect(plugin.patches.some((p) => p.todo)).toBe(false);
   });
 });

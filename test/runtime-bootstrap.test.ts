@@ -114,7 +114,7 @@ describe("bootstrap", () => {
 });
 
 describe("bundled runtime (dist/plexweb-mods.js) smoke test", () => {
-  it("boots inside a page ahead of a webpack bundle without breaking it", async () => {
+  async function bootBundled(fixture: string, files: string[]) {
     const out = await build({
       entryPoints: [join(root, "runtime/entry.ts")],
       bundle: true,
@@ -125,34 +125,50 @@ describe("bundled runtime (dist/plexweb-mods.js) smoke test", () => {
       define: { __PLEXWEB_MODS_VERSION__: '"test"' },
       logLevel: "silent",
     });
-    const code = out.outputFiles[0]!.text;
     const dom = page();
     const script = dom.window.document.createElement("script");
     script.dataset.chunkGlobals = "webpackChunkfake_plex";
     script.dataset.reportDelayMs = "0";
     Object.defineProperty(dom.window.document, "currentScript", { get: () => script, configurable: true });
+    dom.window.eval(out.outputFiles[0]!.text);
+    for (const f of files) dom.window.eval(readFileSync(bundleFixture(fixture, "js", f), "utf8"));
+    await wait(50);
+    return dom;
+  }
+
+  it("boots ahead of a webpack bundle without breaking it, and fails loudly when the player module is absent", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => {});
     try {
-      dom.window.eval(code);
-      dom.window.eval(readFileSync(bundleFixture("wp5", "js", "vendor.js"), "utf8"));
-      dom.window.eval(readFileSync(bundleFixture("wp5", "js", "main.js"), "utf8"));
-      await wait(50);
+      const dom = await bootBundled("wp5", ["vendor.js", "main.js"]);
       const mods = (dom.window as any).__plexwebMods;
       expect(mods.version).toBe("test");
       expect(mods.config.chunkGlobals).toContain("webpackChunkfake_plex");
       expect(Object.keys(mods.plugins)).toEqual(["play-from-here"]);
       expect((dom.window as any).__bootResult).toBe("booted:Play Next|Add to Up Next");
-      const report = mods.report({ final: true });
-      const menu = report.entries.find((e: any) => e.patchId === "play-from-here/context-menu-module");
-      expect(menu.located).toEqual(["300"]);
-      // the native-player integration is marked todo, so the runtime must not look green
-      expect(mods.status).toBe("anchor-failure");
-      expect(report.failures.map((f: any) => f.code)).toEqual(["PATCH_INCOMPLETE"]);
-      expect(consoleError.mock.calls.flat().join(" ")).toMatch(/PATCH_INCOMPLETE: integration unfinished: native player adapter not written/);
       expect(mods.plugins["play-from-here"].tracker).not.toBeNull();
+      expect(mods.status).toBe("anchor-failure");
+      const report = mods.report({ final: true });
+      expect(report.failures.map((f: any) => `${f.patchId}:${f.code}`)).toEqual(["play-from-here/native-player:FIND_UNRESOLVED"]);
+      expect(consoleError.mock.calls.flat().join(" ")).toMatch(/\[play-from-here\/native-player\] FIND_UNRESOLVED/);
     } finally {
       consoleError.mockRestore();
+      consoleInfo.mockRestore();
+    }
+  });
+
+  it("reports OK on a Plex-shaped bundle and captures the native player", async () => {
+    const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      const dom = await bootBundled("wp5-plex-shape", ["main.js"]);
+      const mods = (dom.window as any).__plexwebMods;
+      expect(mods.report({ final: true }).failures).toEqual([]);
+      expect(mods.status).toBe("ok");
+      const pfh = mods.plugins["play-from-here"];
+      expect(typeof pfh.native.getAppModel).toBe("function");
+      expect(Object.keys(pfh.native.handlers)).toEqual(["ui/player/playerLifecycle/startExistingPlayQueuePlayback"]);
+      expect(pfh.diagnostics.contextMenuModules).toEqual(["700"]);
+    } finally {
       consoleInfo.mockRestore();
     }
   });
