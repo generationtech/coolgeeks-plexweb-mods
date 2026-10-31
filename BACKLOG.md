@@ -291,6 +291,8 @@ after approval; PRs from forks never reach the runner.
 
 ## B10. (optional) Hardening, no server needed
 
+- `actions/cache@v4` targets Node 20, which GitHub now forces onto Node 24
+  (a warning in the e2e job log); move to the next major when it exists.
 - Pin GitHub Actions to commit SHAs and pin the gitleaks tarball's sha256
   in `scripts/ci/install-gitleaks.sh` (today it checks the release's own
   checksums file).
