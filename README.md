@@ -84,12 +84,12 @@ auto). `--no-banner` keeps failures in the console only. In the browser,
 
 ## STATUS
 
-_Last updated: 2026-10-31 (session 3)._
+_Last updated: 2026-10-31 (session 4)._
 
 **"Play from here" works end to end against a real Plex Media Server.**
 Tested on PMS 1.43.5.11079 with its bundled Plex Web 4.162.1, in a
 throwaway sandbox (unclaimed, localhost only, no account, generated media;
-reproducible with `scripts/sandbox-pms.sh start`). The e2e suite has 7 tests:
+reproducible with `scripts/sandbox-pms.sh start`). The e2e suite has 8 tests:
 
 1. library grid, Detail View and Table View, each after a non-default sort;
 2. a TV season page ("Play from here" on an episode);
@@ -99,41 +99,44 @@ reproducible with `scripts/sandbox-pms.sh start`). The e2e suite has 7 tests:
    edges;
 5. unpaused autoplay in that library (2-second clips): every automatically
    started item is the next one in visible order, past the first window's
-   end (visible #30 to #52).
+   end (visible #30 to #52, 23 items, on both player paths);
+6. the companion fallback, forced: PMS rejects it (404), which pins down
+   why that path cannot work with Plex Web (see below).
 
-In every test, `GET /playQueues/<id>` selects the clicked item at its
+In tests 1–5, `GET /playQueues/<id>` selects the clicked item at its
 visible index, with the items before and after it in visible order.
 Playback starts in Plex Web's own player and the runtime anchor report is
-clean. All 7 pass with the runtime injected by request interception and
-with it applied by the injector, on either player path. CI runs the same
-suite against a fresh sandbox on every push, in all three modes; first green
-run: CI run 12, about 10 minutes for the e2e job.
+clean. They pass with the runtime injected by request interception and
+with it applied by the injector, on either native player path; test 6 runs
+in interception mode only. CI runs the suite against a fresh sandbox on
+every push, in all three modes (the first run with the Node 24 actions was
+in progress when this was written).
 
 - **Native player, two paths** (group `play-from-here/player`; preflight and
   the runtime print which is active):
   - **primary:** Plex Web's "start existing play queue" action;
   - **fallback:** its "queue playback" action, pointed at the same queue.
-    The fallback ends and resets an open player first, so it replaces the
-    queue rather than appending.
+    It ends and resets an open player first, so it replaces the queue
+    rather than appending.
 
-  Both were forced and verified live (`--opt pfh-player=primary|fallback|companion`).
-  The BACKLOG's earlier fallback candidate, "start playback", was rejected
-  after research: it only builds directory+key queues for tracks, photos and
-  clips.
+  Both were forced and verified live (`--opt pfh-player=primary|fallback`).
+- **Companion fallback: not usable with Plex Web.** Forced in the sandbox,
+  PMS answers 404 to `playMedia` aimed at Plex Web, and its `/clients` list
+  stays empty. The bundle shows why: Plex Web 4.162.1 only *sends* remote-control
+  commands (it's a controller) and never declares itself a player. The
+  path stays as a last resort with an accurate error message. Whether a
+  *claimed* server changes anything is the one open question (BACKLOG B5
+  home checklist).
 - **Anchors:** every Plex-coupled anchor in `plex-anchors.ts` is verified
-  except the never-needed companion fallback. Preflight is green on 4.162.1
-  and on the initial chunks of 4.163.0 from app.plex.tv. See
-  `docs/anchor-research.md`.
-- **Fixed this session (found live):** Plex Web's background
-  recently-added queries hit the same listing endpoint and could have
-  replaced the visible sort; they are now ignored. Season pages (children
-  listings) are supported.
-- **PMS API:** a sorted section `uri` plus `key` yields the visible order
-  from the clicked item on; filters are honoured. Plex Web's own library
-  Play button sends the same `uri` without `key`.
+  except the companion one. Preflight is green on 4.162.1 and on the
+  initial chunks of 4.163.0 from app.plex.tv. See `docs/anchor-research.md`.
+- **PMS API:** a sorted section or season `uri` plus `key` yields the visible
+  order from the clicked item on; filters are honoured. Plex Web's own
+  library Play button sends the same `uri` without `key`.
 - **Tooling:** 224 unit tests. CI on GitHub-hosted runners runs gitleaks,
-  lint, tests and the build, plus the sandbox e2e. The PMS package is cached
-  by release version; no secrets are used.
+  lint, tests, the build and the sandbox e2e, using Node 24 actions
+  (`actions/checkout@v7`, `actions/setup-node@v7`, `actions/cache@v6`). The
+  PMS package is cached by release version; no secrets are used.
 
 **Not verified yet (needs the owner's server, see BACKLOG.md):**
 
@@ -142,7 +145,7 @@ run: CI run 12, about 10 minutes for the e2e job.
   preflight (B3);
 - e2e auth with a token on a *claimed* server (the storage key in
   `e2e/auth.ts`, B4);
-- the first real apply (B5).
+- the first real apply, including the companion check (B5).
 
 The weekly breakage canary (B8) is designed but not built.
 

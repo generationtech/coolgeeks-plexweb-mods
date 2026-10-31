@@ -7,9 +7,12 @@ so a future session (or the owner) can run it without asking questions.
 Already done without the homelab (see `docs/anchor-research.md`): anchor
 research on Plex Web 4.162.1 (PMS 1.43.5 package) and 4.163.0
 (app.plex.tv); both native-player paths (primary and fallback); the
-playQueue curl test; and the e2e suite (grid, Detail/Table View, TV season,
-Other Videos, 300-item windowing), green against a throwaway unclaimed PMS
-(`scripts/sandbox-pms.sh`) locally and in CI on every push.
+playQueue curl test. The e2e suite is green against a throwaway unclaimed
+PMS (`scripts/sandbox-pms.sh`), locally and in CI on every push. It covers
+grid, Detail/Table View, TV season, Other Videos, 300-item windowing with
+Next/Previous and with unpaused autoplay, and a check that the companion
+fallback cannot reach Plex Web (only a claimed server is left to try; see
+B5).
 
 Conventions:
 

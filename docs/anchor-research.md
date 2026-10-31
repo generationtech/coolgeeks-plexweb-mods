@@ -138,6 +138,20 @@ All anchors in `patches/play-from-here/plex-anchors.ts` are now `verified`
 except the companion fallback (`api.companionPlayMedia`), which is never
 needed while either native player path works.
 
+9. **Autoplay across the window (session 4).** Unpaused, with 2-second
+   clips, Plex Web's own autoplay started visible #30, #31, … #52 in order
+   (23 items) after "Play from here" at #30. That carries playback past the
+   first window's end (#50) with no gap, on both native player paths.
+10. **Companion `playMedia` cannot reach Plex Web (session 4).** Forcing
+    `pfh-player=companion` in the sandbox:
+    `GET /player/playback/playMedia` with `X-Plex-Target-Client-Identifier`
+    set to Plex Web's client id gets **404**, and `GET /clients` is empty
+    while Plex Web is open (it only opens `/:/websockets/notifications`). In
+    the bundle every `/player/...` path (`playMedia`, `skipNext`,
+    `timeline/poll`, …) is a command Plex Web *sends* to other players, and
+    `X-Plex-Provides` never occurs, so Plex Web never offers itself as a
+    player. A claimed server is the only setup not tried (BACKLOG B5).
+
 ## How the native-player patch uses this (no code from Plex)
 
 - `find`: the action-type string plus `"appModel"`, which selects 1 module.
@@ -216,3 +230,6 @@ refused by the sandbox network and were not needed.
   pages, Detail/Table View, Other Videos and queue windowing verified; one
   observer bug (background hub queries) found and fixed; sandbox e2e added
   to CI.
+- 2026-10-31 (session 4): autoplay across the queue window verified
+  unpaused; companion fallback shown unusable with Plex Web (controller
+  only; 404 from PMS); CI actions moved to their Node 24 majors.
