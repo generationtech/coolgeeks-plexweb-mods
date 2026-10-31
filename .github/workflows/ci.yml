@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    name: gitleaks (full history)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install gitleaks
+        run: ./scripts/ci/install-gitleaks.sh "$RUNNER_TEMP/bin"
+      - name: Scan
+        run: '"$RUNNER_TEMP/bin/gitleaks" git --redact --no-banner -v .'
+
+  checks:
+    name: lint + unit tests + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install gitleaks (for the gitleaks rule tests)
+        run: |
+          ./scripts/ci/install-gitleaks.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build

@@ -1,0 +1,61 @@
+# gitleaks configuration for a PUBLIC repo.
+# Default rules + rules for things that would leak the owner's Plex setup.
+# Rule behavior is covered by test/gitleaks-config.test.ts.
+
+title = "coolgeeks-plexweb-mods"
+
+[extend]
+useDefault = true
+
+# Plex auth tokens: X-Plex-Token, PLEX_TOKEN, myPlexAccessToken, authToken,
+# PlexOnlineToken (Preferences.xml).
+[[rules]]
+id = "plex-token"
+description = "Plex auth token"
+regex = '''(?i)(?:x-plex-token|plex_token|myplexaccesstoken|plexonlinetoken|authtoken)["']?\s*(?:=|:)\s*["']?([A-Za-z0-9_\-]{16,40})(?:["'&\s,;]|$)'''
+secretGroup = 1
+keywords = ["x-plex-token", "plex_token", "myplexaccesstoken", "plexonlinetoken", "authtoken"]
+
+  [[rules.allowlists]]
+  description = "obvious placeholders"
+  regexTarget = "match"
+  regexes = ['''(?i)(placeholder|example|your[-_]|changeme|redacted|test[-_]token|x{6,})''']
+
+# Plex machine / client identifiers (40 hex chars) in Plex contexts.
+[[rules]]
+id = "plex-identifier"
+description = "Plex machine/client identifier"
+regex = '''(?i)(?:machineidentifier|clientidentifier|client-identifier|server://|/media/|/server/)["']?\s*[:=]?\s*["']?([0-9a-f]{40})\b'''
+secretGroup = 1
+keywords = ["machineidentifier", "clientidentifier", "client-identifier", "server://", "/media/", "/server/"]
+
+# Library section UUIDs (library:// URIs, librarySectionUUID).
+[[rules]]
+id = "plex-section-uuid"
+description = "Plex library section UUID"
+regex = '''(?i)(?:library://|librarysectionuuid["']?\s*[:=]\s*["']?)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'''
+secretGroup = 1
+keywords = ["library://", "librarysectionuuid"]
+
+# *.plex.direct hostnames encode the server's IP and a per-server hash.
+[[rules]]
+id = "plex-direct-hostname"
+description = "plex.direct hostname"
+regex = '''(?i)\b[0-9a-z-]+\.[0-9a-f]{32}\.plex\.direct\b'''
+keywords = ["plex.direct"]
+
+# Private (RFC 1918) IPv4 addresses reveal homelab layout.
+[[rules]]
+id = "private-ipv4"
+description = "Private LAN IPv4 address"
+regex = '''\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(?:/\d{1,2})?'''
+keywords = ["10.", "192.168.", "172."]
+
+  [[rules.allowlists]]
+  description = "CIDR range notation (e.g. a /8 network) is not a host"
+  regexTarget = "match"
+  regexes = ['''/\d{1,2}$''']
+
+[[allowlists]]
+description = "lockfiles and license"
+paths = ['''(^|/)package-lock\.json$''', '''(^|/)LICENSE$''']

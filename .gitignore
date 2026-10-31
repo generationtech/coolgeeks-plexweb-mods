@@ -1,0 +1,46 @@
+# --- secrets / local config -------------------------------------------------
+.env
+.env.*
+!.env.example
+*.local
+Preferences.xml
+**/Preferences.xml
+
+# --- Plex Web bundle captures (never commit Plex's code) ---------------------
+bundle-snapshots/
+
+# --- build output / deps ------------------------------------------------------
+node_modules/
+dist/
+*.tsbuildinfo
+
+# --- Playwright: auth state, traces, HAR, screenshots, videos, reports --------
+playwright/.auth/
+.auth/
+**/storageState*.json
+**/storage-state*.json
+**/*.storageState.json
+auth.json
+trace.zip
+*.trace.zip
+traces/
+*.har
+screenshots/
+**/screenshots/
+videos/
+*.webm
+test-results/
+playwright-report/
+blob-report/
+reports/
+coverage/
+junit*.xml
+
+# --- gitleaks reports -----------------------------------------------------
+gitleaks-report*
+
+# --- editor / OS --------------------------------------------------------------
+.DS_Store
+.vscode/
+.idea/
+*.swp
