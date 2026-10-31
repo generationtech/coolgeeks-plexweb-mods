@@ -103,8 +103,8 @@ visible index, with the items before and after it in visible order.
 Playback starts in Plex Web's own player and the runtime anchor report is
 clean. All 6 pass with the runtime injected by request interception and
 with it applied by the injector, on either player path. CI runs the same
-suite against a fresh sandbox on every push (its first run was in progress
-when this was written).
+suite against a fresh sandbox on every push, in all three modes; first green
+run: CI run 12, about 10 minutes for the e2e job.
 
 - **Native player, two paths** (group `play-from-here/player`; preflight and
   the runtime print which is active):
