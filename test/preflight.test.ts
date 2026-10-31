@@ -68,6 +68,17 @@ describe("scanBundleDir", () => {
     expect(scanBundleDir(bundleFixture("wp4")).chunkGlobals).toEqual(["webpackJsonp"]);
   });
 
+  it("detects a chunk global named only in an inline index.html runtime, and skips our own runtime file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pf-inline-"));
+    mkdirSync(join(dir, "js"));
+    writeFileSync(join(dir, "index.html"), "<script>(()=>{var o=self.webpackChunkinline_only=self.webpackChunkinline_only||[]})()</script>");
+    writeFileSync(join(dir, "js", "a.js"), "var x=1;");
+    writeFileSync(join(dir, "plexweb-mods.js"), 'const cfg={chunkGlobals:["webpackJsonp"]};"ui/player/playerLifecycle/startExistingPlayQueuePlayback"');
+    const s = scanBundleDir(dir);
+    expect(s.chunkGlobals).toEqual(["webpackChunkinline_only"]);
+    expect(s.files).toEqual(["js/a.js"]);
+  });
+
   it("warns when there is nothing to scan", () => {
     const empty = mkdtempSync(join(tmpdir(), "pf-empty-"));
     expect(scanBundleDir(empty).warnings[0]).toMatch(/no \.js files/);
@@ -138,29 +149,26 @@ describe("preflight CLI", () => {
     const r = run("--bundle-dir", bundleFixture("wp5"));
     expect(r.status).toBe(1);
     expect(r.stdout).toMatch(/FAIL play-from-here\/native-player/);
-    expect(r.stdout).toMatch(/FIND_UNRESOLVED: find anchor\(s\) "\/playQueues" occurred in no module/);
+    expect(r.stdout).toMatch(/FIND_UNRESOLVED: find anchor\(s\) .*startExistingPlayQueuePlayback.* occurred in no module/);
   });
 
-  it("exits 0 when everything resolves (only the bundle-independent part is checked here)", () => {
-    const dir = mkdtempSync(join(tmpdir(), "pf-ok-"));
-    mkdirSync(join(dir, "js"));
-    writeFileSync(
-      join(dir, "js", "a.js"),
-      '(self.webpackChunkx=self.webpackChunkx||[]).push([[1],{1:(e,t,n)=>{e.exports=["Play Next","Add to Up Next"]},2:(e,t,n)=>{e.exports={a:"playQueueSelectedItemID",b:"/playQueues"}}}]);',
-    );
-    const r = run("--bundle-dir", dir, "--json");
+  it("exits 0 when every anchor resolves (Plex-shaped fixture)", () => {
+    const r = run("--bundle-dir", bundleFixture("wp5-plex-shape"), "--json");
     const json = JSON.parse(r.stdout);
-    // anchors resolve, but the native-player integration is still marked todo
-    expect(json.report.failures.map((f: any) => f.code)).toEqual(["PATCH_INCOMPLETE"]);
-    expect(json.chunkGlobals).toEqual(["webpackChunkx"]);
-    expect(r.status).toBe(1);
+    expect(json.report.failures).toEqual([]);
+    expect(json.report.entries.map((e: any) => [e.patchId, e.status])).toEqual([
+      ["play-from-here/native-player", "applied"],
+      ["play-from-here/context-menu-module", "applied"],
+    ]);
+    expect(r.status).toBe(0);
   });
 
   it("lists Plex-coupled anchors with their status", () => {
     const r = run("--anchors");
     expect(r.status).toBe(0);
-    expect(r.stdout).toMatch(/unverified +bundle\.nativePlayerModule/);
-    expect(r.stdout).toMatch(/documented +api\.playQueues/);
+    expect(r.stdout).toMatch(/verified +bundle\.startExistingPlayQueueAction/);
+    expect(r.stdout).toMatch(/verified +api\.playQueues/);
+    expect(r.stdout).toMatch(/unverified +api\.companionPlayMedia/);
   });
 
   it("rejects bad usage with exit code 2", () => {

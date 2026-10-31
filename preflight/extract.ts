@@ -106,14 +106,21 @@ export function detectChunkGlobals(code: string): string[] {
 }
 
 export function listJsFiles(dir: string): string[] {
+  return listFiles(dir, /\.(c|m)?js$/);
+}
+
+/** Files this project puts into the Plex Web dir; never scanned as Plex code. */
+export const OWN_FILES: readonly string[] = ["plexweb-mods.js"];
+
+function listFiles(dir: string, pattern: RegExp): string[] {
   const out: string[] = [];
   const walk = (d: string) => {
     for (const name of readdirSync(d).sort()) {
-      if (name === "node_modules" || name.startsWith(".")) continue;
+      if (name === "node_modules" || name.startsWith(".") || OWN_FILES.includes(name)) continue;
       const p = join(d, name);
       const st = statSync(p);
       if (st.isDirectory()) walk(p);
-      else if (/\.(c|m)?js$/.test(name)) out.push(p);
+      else if (pattern.test(name)) out.push(p);
     }
   };
   walk(dir);
@@ -134,6 +141,8 @@ export function scanBundleDir(dir: string): BundleScan {
     modules.push(...r.modules);
     warnings.push(...r.warnings);
   }
+  // The webpack runtime can be an inline <script> in index.html.
+  for (const html of listFiles(dir, /\.html?$/)) detectChunkGlobals(readFileSync(html, "utf8")).forEach((g) => globals.add(g));
   if (files.length === 0) warnings.push(`no .js files found under ${dir}`);
   else if (modules.length === 0) warnings.push("no webpack module tables found; is this a webpack bundle?");
   return { files: files.map((f) => relative(dir, f)), modules, chunkGlobals: [...globals], warnings };
@@ -142,6 +151,6 @@ export function scanBundleDir(dir: string): BundleScan {
 /** Chunk-loading global names used by any .js file under `dir` (cheap regex scan). */
 export function detectChunkGlobalsInDir(dir: string): string[] {
   const names = new Set<string>();
-  for (const f of listJsFiles(dir)) detectChunkGlobals(readFileSync(f, "utf8")).forEach((n) => names.add(n));
+  for (const f of [...listJsFiles(dir), ...listFiles(dir, /\.html?$/)]) detectChunkGlobals(readFileSync(f, "utf8")).forEach((n) => names.add(n));
   return [...names];
 }
