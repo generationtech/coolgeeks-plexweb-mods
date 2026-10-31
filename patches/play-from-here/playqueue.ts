@@ -61,7 +61,13 @@ export interface ServerRef {
 }
 
 export interface ListingRef {
-  sectionId: string | number;
+  /** Section of a library grid listing (/library/sections/<id>/all). */
+  sectionId?: string | number;
+  /**
+   * Any other listed container, e.g. a season's episodes:
+   * "/library/metadata/<id>/children". Takes precedence over sectionId.
+   */
+  containerPath?: string;
   /** Query of the visible listing (sort, type, filters). Paging/client params are dropped. */
   params: URLSearchParams | Record<string, string> | string;
   /** Needed only for the library:// URI scheme. */
@@ -194,6 +200,20 @@ export function buildSectionPath(sectionId: string | number, params: ListingRef[
   return `/library/sections/${assertSectionId(sectionId)}/all${q ? `?${q}` : ""}`;
 }
 
+/** Listed containers we know how to turn into a play queue source. */
+export const CONTAINER_PATH = /^\/library\/(?:sections\/\d+\/all|metadata\/\d+\/children)$/;
+
+/** The listing as a container path with its sanitized query (the play queue's source path). */
+export function buildContainerPath(listing: ListingRef, extraDrops: readonly string[] = []): string {
+  if (listing.containerPath === undefined) {
+    if (listing.sectionId === undefined) throw new Error("listing needs a sectionId or a containerPath");
+    return buildSectionPath(listing.sectionId, listing.params, extraDrops);
+  }
+  if (!CONTAINER_PATH.test(listing.containerPath)) throw new Error(`unsupported container path "${listing.containerPath}"`);
+  const q = serializeQuery(sanitizeListingParams(listing.params, extraDrops), true);
+  return `${listing.containerPath}${q ? `?${q}` : ""}`;
+}
+
 /** `/library/metadata/<ratingKey>` */
 export function metadataKey(ratingKey: string | number): string {
   return `/library/metadata/${assertRatingKey(ratingKey)}`;
@@ -206,7 +226,7 @@ export function buildListingUri(
   scheme: "server" | "library" = "server",
   extraDrops: readonly string[] = [],
 ): string {
-  const path = buildSectionPath(listing.sectionId, listing.params, extraDrops);
+  const path = buildContainerPath(listing, extraDrops);
   if (scheme === "library") {
     const uuid = assertSafeSegment("librarySectionUUID", listing.librarySectionUUID ?? "");
     return `library://${uuid}/directory/${encodeURIComponent(path)}`;
@@ -337,15 +357,27 @@ export function itemsFromSelected(queue: CreatedPlayQueue): string[] {
 export interface ObservedListing {
   /** PMS base URL (origin plus any reverse-proxy path prefix). */
   baseUrl: string;
-  sectionId: string;
+  /** "/library/sections/<id>/all" or "/library/metadata/<id>/children". */
+  containerPath: string;
+  /** Set for section listings. */
+  sectionId?: string;
+  /** Set for children listings: the parent's rating key. */
+  parentRatingKey?: string;
   /** Full query of the request, unsanitized (sanitize at use). */
   params: URLSearchParams;
 }
 
 /**
- * Recognizes a section listing request made by Plex Web, e.g.
- * `https://host:32400/library/sections/3/all?type=1&sort=year:desc&X-Plex-Container-Start=0`.
- * Returns null for anything else (hubs, metadata, other sections endpoints).
+ * Params that mark a section request as a background query of Plex Web
+ * (e.g. its "recently added" hubs) rather than the visible listing.
+ */
+export const BACKGROUND_LISTING_PARAMS: readonly string[] = ["contentDirectoryID", "pinnedContentDirectoryID"]; // = plex-anchors api.backgroundListingParams
+
+/**
+ * Recognizes the listing requests Plex Web makes for what is on screen:
+ *   /library/sections/<id>/all?type=1&sort=year:desc&...   (library grid/list)
+ *   /library/metadata/<id>/children?...                     (e.g. a season's episodes)
+ * Returns null for anything else (hubs, metadata, background queries).
  */
 export function parseListingRequest(url: string, base?: string): ObservedListing | null {
   let u: URL;
@@ -354,9 +386,15 @@ export function parseListingRequest(url: string, base?: string): ObservedListing
   } catch {
     return null;
   }
-  const m = /^(.*?)\/library\/sections\/(\d+)\/all\/?$/.exec(u.pathname);
-  if (!m) return null;
-  return { baseUrl: `${u.origin}${m[1]}`, sectionId: m[2]!, params: new URLSearchParams(u.search) };
+  const params = new URLSearchParams(u.search);
+  const sec = /^(.*?)(\/library\/sections\/(\d+)\/all)\/?$/.exec(u.pathname);
+  if (sec) {
+    if (BACKGROUND_LISTING_PARAMS.some((k) => params.has(k))) return null;
+    return { baseUrl: `${u.origin}${sec[1]}`, containerPath: sec[2]!, sectionId: sec[3]!, params };
+  }
+  const kids = /^(.*?)(\/library\/metadata\/(\d+)\/children)\/?$/.exec(u.pathname);
+  if (kids) return { baseUrl: `${u.origin}${kids[1]}`, containerPath: kids[2]!, parentRatingKey: kids[3]!, params };
+  return null;
 }
 
 /** `X-Plex-*` client values from a request's query and headers (headers win). */

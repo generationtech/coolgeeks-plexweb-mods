@@ -19,7 +19,12 @@ export interface ServerContext {
 
 export interface ListingContext {
   baseUrl: string;
-  sectionId: string;
+  /** "/library/sections/<id>/all" or "/library/metadata/<id>/children". */
+  containerPath: string;
+  /** Section listings only. */
+  sectionId?: string;
+  /** Children listings only (e.g. the season whose episodes are listed). */
+  parentRatingKey?: string;
   /** Query of the listing request Plex Web made (unsanitized). */
   params: URLSearchParams;
   /** When it was observed (ms epoch). */
@@ -28,6 +33,7 @@ export interface ListingContext {
 }
 
 export interface PlaybackRequest {
+  /** The queue we created (POST /playQueues). */
   queue: CreatedPlayQueue;
   /** "video" | "audio" | "photo", as sent in POST /playQueues. */
   playQueueType: PlayQueueType;
@@ -35,14 +41,23 @@ export interface PlaybackRequest {
   item: ItemRef;
 }
 
-export type PlaybackPath = "native" | "companion";
+/**
+ * - native:          Plex Web's "start existing play queue" action, on our queue.
+ * - native-fallback: Plex Web's "queue playback" action, on our queue.
+ * - companion:       remote-control playMedia proxied by PMS (last resort).
+ */
+export type PlaybackPath = "native" | "native-fallback" | "companion";
 
 export interface PlexBindings {
   /** The listing currently on screen, or null when not on a library listing. */
   currentListing(): ListingContext | null;
   /** Server context (machine identifier, client headers) for a listing. */
   serverFor(listing: ListingContext): Promise<ServerContext>;
-  /** Start Plex Web's native player on the created queue. */
+  /** Metadata type of an item (used when the listing does not say). */
+  itemType?(server: ServerContext, ratingKey: string): Promise<string | undefined>;
+  /** The path startPlayback will take right now, or null (with reason) when none is usable. */
+  playbackPath(): { path: PlaybackPath | null; reason?: string };
+  /** Start Plex Web's player on the created queue. */
   startPlayback(req: PlaybackRequest): Promise<PlaybackPath>;
 }
 

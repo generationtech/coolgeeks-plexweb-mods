@@ -152,6 +152,45 @@ describe("PatchSession.transform", () => {
   });
 });
 
+describe("patch groups (alternatives)", () => {
+  const grouped = () =>
+    new PatchSession([
+      plugin([
+        { id: "g/primary", group: "g/player", find: "primary-anchor", onExports: () => {} },
+        { id: "g/fallback", group: "g/player", find: "fallback-anchor", onExports: () => {} },
+      ]),
+    ]);
+
+  it("is satisfied by the first member that applies; others become standby", () => {
+    const s = grouped();
+    s.transform("1", "primary-anchor fallback-anchor");
+    const r = s.report({ final: true });
+    expect(r.ok).toBe(true);
+    expect(r.groups).toEqual([{ name: "g/player", members: ["g/primary", "g/fallback"], active: "g/primary", available: ["g/primary", "g/fallback"] }]);
+    expect(formatReport(r)).toMatch(/group g\/player: active = g\/primary; standby = g\/fallback/);
+  });
+
+  it("degrades to the fallback, reporting the primary's problem as a warning", () => {
+    const s = grouped();
+    s.transform("1", "fallback-anchor");
+    const r = s.report({ final: true });
+    expect(r.ok).toBe(true);
+    expect(r.groups[0]!.active).toBe("g/fallback");
+    expect(r.warnings.map((w) => `${w.patchId}:${w.code}`)).toEqual(["g/primary:FIND_UNRESOLVED"]);
+    expect(formatReport(r)).toMatch(/group g\/player: active = g\/fallback; no standby available/);
+    expect(formatReport(r)).toMatch(/WARN g\/primary/);
+  });
+
+  it("fails when no member applies", () => {
+    const s = grouped();
+    s.transform("1", "nothing");
+    const r = s.report({ final: true });
+    expect(r.ok).toBe(false);
+    expect(r.failures.map((f) => f.patchId)).toEqual(["g/primary", "g/fallback"]);
+    expect(formatReport(r)).toMatch(/group g\/player: NO MEMBER AVAILABLE/);
+  });
+});
+
 describe("PatchSession.report", () => {
   const defs = () =>
     new PatchSession([

@@ -2,22 +2,27 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PatchSession } from "../runtime/engine";
 import { installWebpackHooks, type WebpackHooks } from "../runtime/loader";
 import plugin from "../patches/play-from-here/index";
-import { createNativePlayer, findHandlerMap, resolveEntities } from "../patches/play-from-here/native-player";
+import { createFallbackPlayer, createNativePlayer, findHandlerMap, resolveEntities } from "../patches/play-from-here/native-player";
 import { PLEX_ANCHORS } from "../patches/play-from-here/plex-anchors";
 import type { PlaybackRequest } from "../patches/play-from-here/bindings";
 import { bundleFixture, createRealm } from "./helpers/realm";
 
 const ACTION = PLEX_ANCHORS.bundle.startExistingPlayQueueAction.value;
+const QUEUE = PLEX_ANCHORS.bundle.queuePlaybackAction.value;
+const END = PLEX_ANCHORS.bundle.endPlaybackAction.value;
+const RESET = PLEX_ANCHORS.bundle.resetPlayerAction.value;
 
 /** Backbone-ish fake of the bits of Plex Web's appModel the adapter touches. */
-function fakeAppModel(opts: { server?: boolean; provider?: boolean } = {}) {
+function fakeAppModel(opts: { server?: boolean; provider?: boolean; openQueue?: boolean } = {}) {
+  const player = { queue: opts.openQueue ? { id: 1 } : null, get: (k: string) => (k === "playQueue" ? player.queue : undefined) };
+  const ui = { get: (k: string) => (k === "audioVideoPlayer" ? player : undefined) };
   const provider = { entityID: () => "provider-entity", populate: () => Promise.resolve(provider) };
   const server = {
     entityID: () => "server-entity",
     get: (k: string) => (k === "providers" ? { populate: () => Promise.resolve({ get: (id: string) => (opts.provider === false ? undefined : id === "com.plexapp.plugins.library" ? provider : undefined) }) } : undefined),
   };
   const servers = { populateServer: vi.fn((_id: string) => Promise.resolve(opts.server === false ? null : server)) };
-  return { get: (k: string) => (k === "servers" ? servers : undefined), entityID: () => "app", servers };
+  return { get: (k: string) => (k === "servers" ? servers : k === "ui" ? ui : undefined), entityID: () => "app", servers, player };
 }
 
 const req: PlaybackRequest = {
@@ -62,12 +67,48 @@ describe("createNativePlayer", () => {
   });
 });
 
+describe("createFallbackPlayer (queue playback on our queue)", () => {
+  it("starts our queue through the queue-playback action, unpaused", async () => {
+    const app = fakeAppModel();
+    const queue = vi.fn();
+    const end = vi.fn();
+    const reset = vi.fn();
+    await createFallbackPlayer({ handlers: { [QUEUE]: queue, [END]: end, [RESET]: reset }, getAppModel: () => app }).play(req);
+    expect(end).not.toHaveBeenCalled();
+    expect(reset).not.toHaveBeenCalled();
+    expect(queue).toHaveBeenCalledWith(
+      app,
+      { serverEntityID: "server-entity", providerEntityID: "provider-entity", skipClickMetrics: true, options: { playQueueID: 42, type: "video", next: true } },
+      expect.any(Function),
+    );
+  });
+
+  it("ends and resets an open player first, so the queue is replaced, not appended to", async () => {
+    const app = fakeAppModel({ openQueue: true });
+    const calls: string[] = [];
+    const h = {
+      [QUEUE]: () => calls.push("queue"),
+      [END]: (_a: unknown, p: any) => calls.push(`end:${p.playerType}:${p.isForced}`),
+      [RESET]: (_a: unknown, p: any) => calls.push(`reset:${p.playerType}`),
+    };
+    await createFallbackPlayer({ handlers: h, getAppModel: () => app }).play(req);
+    expect(calls).toEqual(["end:audioVideo:true", "reset:audioVideo", "queue"]);
+  });
+
+  it("refuses to append when a player is open and no reset handler exists", async () => {
+    const app = fakeAppModel({ openQueue: true });
+    await expect(createFallbackPlayer({ handlers: { [QUEUE]: vi.fn() }, getAppModel: () => app }).play(req)).rejects.toThrow(/reset handler is not available/);
+    await expect(createFallbackPlayer({ handlers: {}, getAppModel: () => app }).play(req)).rejects.toThrow(/queuePlayback not captured/);
+  });
+});
+
 describe("play-from-here native-player patch on a Plex-shaped bundle", () => {
   let hooks: WebpackHooks | null = null;
   afterEach(() => {
     hooks?.uninstall();
     plugin.native.handlers = null;
     plugin.native.getAppModel = null;
+    plugin.nativeFallback.handlers = null;
   });
 
   it("captures the handler map, exposes appModel via $self, and starts playback through the handler", async () => {
@@ -86,5 +127,13 @@ describe("play-from-here native-player patch on a Plex-shaped bundle", () => {
 
     await createNativePlayer(plugin.native).play(req);
     expect(app.get("player").started).toMatchObject({ serverEntityID: "server-entity", providerEntityID: "provider-entity", playQueueID: 42, playQueueType: "video" });
+
+    // the fallback was captured from the same module and works on its own
+    expect(report.groups[0]).toMatchObject({ active: "play-from-here/native-player", available: ["play-from-here/native-player", "play-from-here/native-player-fallback"] });
+    const avPlayer = app.get("ui").get("audioVideoPlayer");
+    avPlayer.queue = { id: 1 }; // a player is open
+    await createFallbackPlayer(plugin.nativeFallback).play(req);
+    expect(avPlayer.log).toEqual(["end:audioVideo", "reset:audioVideo", "queue"]);
+    expect(avPlayer.queued).toMatchObject({ options: { playQueueID: 42, type: "video", next: true } });
   });
 });

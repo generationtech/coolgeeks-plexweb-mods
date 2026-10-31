@@ -107,8 +107,13 @@ changes, and uninstalled byte for byte.
   no `role="menu"` container. Preflight reports all anchors OK on 4.162.1,
   and on the initial chunks of 4.163.0 from app.plex.tv. See
   `docs/anchor-research.md`.
-- **Native player:** the patch captures Plex Web's own "start existing play
-  queue" action handler and its `appModel`. No placeholder or `todo` is left.
+- **Native player, two paths:** the primary patch captures Plex Web's own
+  "start existing play queue" action handler and its `appModel`; a fallback
+  uses Plex Web's "queue playback" action on the same queue (ending and
+  resetting an open player first, so it replaces rather than appends). Both
+  were forced and verified live; preflight and the runtime report name the
+  active path (`group play-from-here/player: active = ...`). Force one with
+  `--opt pfh-player=primary|fallback|companion`.
 - **PMS API (B3):** a sorted section `uri` plus `key` yields the visible
   order from the clicked item on; filters are honoured. Plex Web's own
   library Play button sends the same `uri` without `key`.

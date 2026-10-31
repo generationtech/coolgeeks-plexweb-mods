@@ -149,7 +149,11 @@ describe("bundled runtime (dist/plexweb-mods.js) smoke test", () => {
       expect(mods.plugins["play-from-here"].tracker).not.toBeNull();
       expect(mods.status).toBe("anchor-failure");
       const report = mods.report({ final: true });
-      expect(report.failures.map((f: any) => `${f.patchId}:${f.code}`)).toEqual(["play-from-here/native-player:FIND_UNRESOLVED"]);
+      expect(report.failures.map((f: any) => `${f.patchId}:${f.code}`)).toEqual([
+        "play-from-here/native-player:FIND_UNRESOLVED",
+        "play-from-here/native-player-fallback:FIND_UNRESOLVED",
+      ]);
+      expect(report.groups[0].active).toBeNull();
       expect(consoleError.mock.calls.flat().join(" ")).toMatch(/\[play-from-here\/native-player\] FIND_UNRESOLVED/);
     } finally {
       consoleError.mockRestore();
@@ -166,7 +170,9 @@ describe("bundled runtime (dist/plexweb-mods.js) smoke test", () => {
       expect(mods.status).toBe("ok");
       const pfh = mods.plugins["play-from-here"];
       expect(typeof pfh.native.getAppModel).toBe("function");
-      expect(Object.keys(pfh.native.handlers)).toEqual(["ui/player/playerLifecycle/startExistingPlayQueuePlayback"]);
+      expect(Object.keys(pfh.native.handlers)).toContain("ui/player/playerLifecycle/startExistingPlayQueuePlayback");
+      expect(pfh.nativeFallback.handlers).toBe(pfh.native.handlers); // same handler map, captured by both patches
+      expect(pfh.activePath()).toEqual({ path: "native" });
       expect(pfh.diagnostics.contextMenuModules).toEqual(["700"]);
     } finally {
       consoleInfo.mockRestore();

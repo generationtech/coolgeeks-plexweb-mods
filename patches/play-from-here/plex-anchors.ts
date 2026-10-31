@@ -38,6 +38,20 @@ export const PLEX_ANCHORS = {
       "verified",
       `${VERIFIED_AGAINST}: preflight locates exactly 1 module; live run started playback through it.`,
     ),
+    /**
+     * Fallback: action type that queues playback; with options.playQueueID it
+     * fetches that existing queue and starts it. Same module and handler map
+     * as the primary action. (The "startPlayback" action was rejected: it only
+     * builds directory+key queues for tracks, photos and clips.)
+     */
+    queuePlaybackAction: a(
+      "ui/player/playerLifecycle/queuePlayback",
+      "unverified",
+      `${VERIFIED_AGAINST}: preflight locates exactly 1 module; to be proven by a forced live run.`,
+    ),
+    /** Fallback: actions used to clear an open player first (else queuePlayback appends to its queue). */
+    endPlaybackAction: a("ui/player/playerLifecycle/endPlayback", "unverified", `${VERIFIED_AGAINST}: same handler map.`),
+    resetPlayerAction: a("ui/player/playerControls/resetAndClosePlayer", "unverified", `${VERIFIED_AGAINST}: same handler map.`),
     /** Service name of Plex Web's root model, looked up through its service registry. */
     appModelService: a('"appModel"', "verified", `${VERIFIED_AGAINST}: occurs once in the module selected above.`),
     /** Item context-menu labels (English source strings are also the localization keys). */
@@ -55,6 +69,10 @@ export const PLEX_ANCHORS = {
     providersAttr: a("providers", "verified", `${VERIFIED_AGAINST}: server attribute holding the provider collection; live run.`),
     populate: a("populate", "verified", `${VERIFIED_AGAINST}: async loader on collections/models; live run.`),
     libraryProviderIdentifier: a("com.plexapp.plugins.library", "verified", `${VERIFIED_AGAINST}: library provider identifier constant.`),
+    /** Fallback path: where the open player lives (appModel.get(ui).get(<type>Player).get(playQueue)). */
+    uiAttr: a("ui", "unverified", `${VERIFIED_AGAINST}: appModel attribute holding UI models.`),
+    playerModels: a({ video: "audioVideoPlayer", audio: "audioVideoPlayer", photo: "photoPlayer" } as const, "unverified", `${VERIFIED_AGAINST}: player model names per play queue type.`),
+    playerQueueAttr: a("playQueue", "unverified", `${VERIFIED_AGAINST}: player model attribute holding the open queue.`),
   },
 
   /** DOM structure of Plex Web (consumed by dom-menu.ts). */
@@ -76,6 +94,12 @@ export const PLEX_ANCHORS = {
       "verified",
       `${VERIFIED_AGAINST}: route /media/:machineIdentifier?/:providerIdentifier with source=<section> and pivot=library; live run.`,
     ),
+    /** Item details page (e.g. a season listing its episodes); captures [machineIdentifier, ratingKey]. */
+    detailsPage: a(
+      /#!\/server\/([^/?#]+)\/details\?(?:[^#]*&)?key=%2Flibrary%2Fmetadata%2F(\d+)(?:[&#]|$)/,
+      "verified",
+      `${VERIFIED_AGAINST}: season pages are /server/:machineIdentifier/details?key=<encoded /library/metadata/id>; live run.`,
+    ),
     /** Any server-scoped route; captures [machineIdentifier]. */
     serverScoped: a(/#!\/(?:media|server)\/([0-9a-zA-Z-]+)\//, "verified", `${VERIFIED_AGAINST}: /media/... and /server/:machineIdentifier/... routes.`),
   },
@@ -83,6 +107,9 @@ export const PLEX_ANCHORS = {
   /** PMS HTTP API. */
   api: {
     sectionListingPath: a("/library/sections/<id>/all", "verified", "PMS 1.43.5: Plex Web's grid requests it with type, sort and filters; live run."),
+    childrenListingPath: a("/library/metadata/<id>/children", "verified", "PMS 1.43.5: Plex Web's season page lists episodes with it; live run."),
+    /** Params of Plex Web's background section queries (recently-added hubs), never the visible listing. */
+    backgroundListingParams: a(["contentDirectoryID", "pinnedContentDirectoryID"] as const, "verified", `${VERIFIED_AGAINST}: seen on /library/sections/<id>/all requests for hubs; live run.`),
     playQueues: a("/playQueues", "verified", "PMS 1.43.5: POST with a sorted section uri + key returns the visible order from key on; curl and live run."),
     identity: a("/identity", "verified", "PMS 1.43.5: unauthenticated, returns machineIdentifier."),
     companionPlayMedia: a(
@@ -99,7 +126,8 @@ export function listAnchors(): Array<{ path: string; status: AnchorStatus; value
   for (const [group, entries] of Object.entries(PLEX_ANCHORS)) {
     for (const [name, anchor] of Object.entries(entries as Record<string, Anchor<unknown>>)) {
       const v = anchor.value;
-      out.push({ path: `${group}.${name}`, status: anchor.status, value: Array.isArray(v) ? v.join(" + ") : String(v), source: anchor.source });
+      const value = Array.isArray(v) ? v.join(" + ") : v && typeof v === "object" && !(v instanceof RegExp) ? JSON.stringify(v) : String(v);
+      out.push({ path: `${group}.${name}`, status: anchor.status, value, source: anchor.source });
     }
   }
   return out;

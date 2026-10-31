@@ -42,7 +42,7 @@ export function findHandlerMap(exports: unknown, actionType: string): Record<str
 
 const asPromise = <T>(v: T | PromiseLike<T>): Promise<T> => Promise.resolve(v);
 
-/** Resolves Plex Web's server and library-provider models for a machine identifier. */
+/** Resolves Plex Web's server and library-provider entity ids for a machine identifier. */
 export async function resolveEntities(appModel: BackboneLike, machineIdentifier: string): Promise<{ serverEntityID: unknown; providerEntityID: unknown }> {
   const api = PLEX_ANCHORS.appApi;
   const servers = appModel.get(api.serversAttr.value);
@@ -58,6 +58,7 @@ export async function resolveEntities(appModel: BackboneLike, machineIdentifier:
   return { serverEntityID: server.entityID(), providerEntityID: populated.entityID() };
 }
 
+/** Primary path: Plex Web's "start existing play queue" action, on the queue we created. */
 export function createNativePlayer(state: NativePlayerState): NativePlayer {
   const actionType = PLEX_ANCHORS.bundle.startExistingPlayQueueAction.value;
   return {
@@ -74,6 +75,41 @@ export function createNativePlayer(state: NativePlayerState): NativePlayer {
         playQueueID: id,
         playbackStartTime: Date.now(),
       });
+    },
+  };
+}
+
+/**
+ * Fallback path: Plex Web's "queue playback" action pointed at the queue we
+ * created (options.playQueueID): it fetches that queue and starts playback.
+ * If a player already holds a queue, that action would append to it, so the
+ * open player is ended and reset first.
+ */
+export function createFallbackPlayer(state: NativePlayerState): NativePlayer {
+  const { bundle, appApi } = PLEX_ANCHORS;
+  return {
+    async play(req: PlaybackRequest) {
+      const queueHandler = state.handlers?.[bundle.queuePlaybackAction.value] as Handler | undefined;
+      if (typeof queueHandler !== "function") throw new BindingUnavailableError(`handler for ${bundle.queuePlaybackAction.value} not captured`);
+      const appModel = state.getAppModel?.() as BackboneLike | undefined;
+      if (!appModel || typeof appModel.get !== "function") throw new BindingUnavailableError("appModel not available");
+      const ids = await resolveEntities(appModel, req.server.machineIdentifier);
+      const playerName = appApi.playerModels.value[req.playQueueType];
+      const player = appModel.get(appApi.uiAttr.value)?.get?.(playerName);
+      if (player?.get?.(appApi.playerQueueAttr.value)) {
+        const playerType = playerName.replace(/Player$/, "");
+        const end = state.handlers?.[bundle.endPlaybackAction.value] as Handler | undefined;
+        const reset = state.handlers?.[bundle.resetPlayerAction.value] as Handler | undefined;
+        if (typeof reset !== "function") throw new BindingUnavailableError("a player is open and its reset handler is not available");
+        end?.(appModel, { playerType, isForced: true }, () => {});
+        reset(appModel, { playerType }, () => {});
+      }
+      const id = /^\d+$/.test(req.queue.id) ? Number(req.queue.id) : req.queue.id;
+      queueHandler(
+        appModel,
+        { ...ids, skipClickMetrics: true, options: { playQueueID: id, type: req.playQueueType, next: true } },
+        () => {},
+      );
     },
   };
 }

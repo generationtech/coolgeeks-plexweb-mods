@@ -3,7 +3,16 @@
  *   visible listing + clicked item -> POST /playQueues -> native player.
  */
 import type { PlaybackPath, PlexBindings } from "./bindings";
-import { buildCreatePlayQueueRequest, parsePlayQueue, type CreatedPlayQueue, type ItemRef, type PlayQueueType } from "./playqueue";
+import {
+  buildCreatePlayQueueRequest,
+  parsePlayQueue,
+  playQueueTypeFor,
+  sanitizeListingParams,
+  type CreatedPlayQueue,
+  type ItemRef,
+  type ListingRef,
+  type PlayQueueType,
+} from "./playqueue";
 
 export interface FlowDeps {
   bindings: PlexBindings;
@@ -37,19 +46,33 @@ export async function runPlayFromHere(deps: FlowDeps, item: ItemRef): Promise<Fl
     throw new PlayFromHereError("server", (err as Error).message, { cause: err });
   }
 
+  const { path, reason } = deps.bindings.playbackPath();
+  if (!path) throw new PlayFromHereError("playback", reason ?? "no playback path available");
+
+  const listingRef: ListingRef = {
+    containerPath: listing.containerPath,
+    ...(listing.sectionId !== undefined ? { sectionId: listing.sectionId } : {}),
+    params: listing.params,
+    ...(listing.librarySectionUUID ? { librarySectionUUID: listing.librarySectionUUID } : {}),
+  };
+  const dropParams = deps.requestOptions?.dropParams ?? [];
+  // The queue type follows the listing's type param; listings without one
+  // (e.g. a season's children) ask the server for the item's type.
+  let itemRef = item;
+  if (!sanitizeListingParams(listing.params, dropParams).get("type") && item.type === undefined && deps.bindings.itemType) {
+    const t = await deps.bindings.itemType(server, String(item.ratingKey)).catch(() => undefined);
+    if (t) itemRef = { ...item, type: t };
+  }
+  const playQueueType = playQueueTypeFor(sanitizeListingParams(listing.params, dropParams).get("type") ?? itemRef.type) as PlayQueueType;
+
   const req = buildCreatePlayQueueRequest({
     server,
-    listing: {
-      sectionId: listing.sectionId,
-      params: listing.params,
-      ...(listing.librarySectionUUID ? { librarySectionUUID: listing.librarySectionUUID } : {}),
-    },
-    item,
+    listing: listingRef,
+    item: itemRef,
     headers: server.headers,
     ...(deps.requestOptions?.scheme ? { scheme: deps.requestOptions.scheme } : {}),
-    ...(deps.requestOptions?.dropParams ? { dropParams: deps.requestOptions.dropParams } : {}),
+    dropParams,
   });
-
   let queue: CreatedPlayQueue;
   try {
     const res = await deps.fetch(req.url, { method: req.method, headers: req.headers });
@@ -60,8 +83,7 @@ export async function runPlayFromHere(deps: FlowDeps, item: ItemRef): Promise<Fl
   }
 
   try {
-    const playQueueType = (new URL(req.url).searchParams.get("type") ?? "video") as PlayQueueType;
-    const playback = await deps.bindings.startPlayback({ queue, server, item, playQueueType });
+    const playback = await deps.bindings.startPlayback({ queue, server, item: itemRef, playQueueType });
     return { queue, playback };
   } catch (err) {
     throw new PlayFromHereError("playback", (err as Error).message, { cause: err });

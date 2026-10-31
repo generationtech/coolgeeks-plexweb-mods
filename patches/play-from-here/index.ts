@@ -14,7 +14,8 @@ import type { NativePlayer } from "./bindings";
 import { createDefaultBindings, parseRoute } from "./default-bindings";
 import { createDomMenuIntegration } from "./dom-menu";
 import { runPlayFromHere, type FlowResult } from "./flow";
-import { createNativePlayer, findHandlerMap, type NativePlayerState } from "./native-player";
+import { createFallbackPlayer, createNativePlayer, findHandlerMap, type NativePlayerState } from "./native-player";
+import { parsePlayerPreference } from "./playback";
 import { installNetworkObserver, ListingTracker } from "./network-observer";
 import type { ItemRef } from "./playqueue";
 import { PLEX_ANCHORS } from "./plex-anchors";
@@ -36,8 +37,12 @@ export interface PlayFromHerePlugin extends PluginDef {
   };
   /** State filled by the native-player patch. */
   native: NativePlayerState;
+  /** State filled by the native-player-fallback patch (shares the appModel getter). */
+  nativeFallback: NativePlayerState;
   /** Called from the patched module (via $self) with its appModel lookup. */
   registerAppModelGetter(getter: () => unknown): void;
+  /** Which playback path a click would use right now (for the console and e2e). */
+  activePath(): { path: string | null; reason?: string };
 }
 
 /**
@@ -46,32 +51,38 @@ export interface PlayFromHerePlugin extends PluginDef {
  *    action. One replacement exposes the module's own appModel lookup to
  *    $self (minified names are captured from the code, never hard-coded);
  *    an export capture finds the action-handler map by its action-type key.
+ *  - native-player-fallback: same idea for the "queue playback" action
+ *    (pointed at our queue), used when the first is gone. Both form the group "play-from-here/player":
+ *    either one is enough, and reports name the active one.
  *  - context-menu-module: optional diagnostics (the menu entry is added by
  *    the DOM integration).
  */
-export function createPatches(plugin: Pick<PlayFromHerePlugin, "diagnostics" | "native">): PatchDef[] {
+export const PLAYER_GROUP = `${PLUGIN_NAME}/player`;
+
+export function createPatches(plugin: Pick<PlayFromHerePlugin, "diagnostics" | "native" | "nativeFallback">): PatchDef[] {
   const { bundle } = PLEX_ANCHORS;
-  const action = bundle.startExistingPlayQueueAction.value;
-  return [
-    {
-      id: `${PLUGIN_NAME}/native-player`,
-      find: [`"${action}"`, bundle.appModelService.value],
-      note: `${bundle.startExistingPlayQueueAction.status}: ${bundle.startExistingPlayQueueAction.source}`,
-      replacements: [
-        {
-          // Insert, right after the factory's "use strict", a getter that calls the
-          // same service lookup this module uses for ${bundle.appModelService.value}.
-          match: new RegExp(`"use strict";(?=[\\s\\S]*?\\(0,([\\w$]+)\\.([\\w$]+)\\)\\(${bundle.appModelService.value}\\))`),
-          replace: `"use strict";$self.registerAppModelGetter(()=>(0,$1.$2)(${bundle.appModelService.value}));`,
-        },
-      ],
-      onExports: (exports) => {
-        const map = findHandlerMap(exports, action);
-        if (!map) return false;
-        plugin.native.handlers = map;
-        return true;
-      },
+  // Insert, right after the factory's "use strict", a getter that calls the
+  // same service lookup the module uses for "appModel".
+  const exposeAppModel = {
+    match: new RegExp(`"use strict";(?=[\\s\\S]*?\\(0,([\\w$]+)\\.([\\w$]+)\\)\\(${bundle.appModelService.value}\\))`),
+    replace: `"use strict";$self.registerAppModelGetter(()=>(0,$1.$2)(${bundle.appModelService.value}));`,
+  };
+  const playerPatch = (id: string, anchor: { value: string; status: string; source: string }, state: NativePlayerState): PatchDef => ({
+    id,
+    group: PLAYER_GROUP,
+    find: [`"${anchor.value}"`, bundle.appModelService.value],
+    note: `${anchor.status}: ${anchor.source}`,
+    replacements: [exposeAppModel],
+    onExports: (exports) => {
+      const map = findHandlerMap(exports, anchor.value);
+      if (!map) return false;
+      state.handlers = map;
+      return true;
     },
+  });
+  return [
+    playerPatch(`${PLUGIN_NAME}/native-player`, bundle.startExistingPlayQueueAction, plugin.native),
+    playerPatch(`${PLUGIN_NAME}/native-player-fallback`, bundle.queuePlaybackAction, plugin.nativeFallback),
     {
       id: `${PLUGIN_NAME}/context-menu-module`,
       find: bundle.contextMenuLabels.value.map((l) => `"${l}"`),
@@ -96,6 +107,13 @@ const plugin: PlayFromHerePlugin = {
   lastError: null,
   diagnostics: { contextMenuModules: [] },
   native: { handlers: null, getAppModel: null },
+  nativeFallback: {
+    handlers: null,
+    get getAppModel() {
+      return plugin.native.getAppModel;
+    },
+  },
+  activePath: () => ({ path: null, reason: "play-from-here is not started" }),
 
   registerNativePlayer(player: NativePlayer) {
     plugin.nativePlayer = player;
@@ -128,11 +146,15 @@ const plugin: PlayFromHerePlugin = {
       fetch: (url, init) => win.fetch(url, init),
       playback: {
         nativePlayer: () => plugin.nativePlayer ?? (plugin.native.handlers && plugin.native.getAppModel ? createNativePlayer(plugin.native) : null),
+        fallbackPlayer: () =>
+          plugin.nativeFallback.handlers && plugin.nativeFallback.getAppModel ? createFallbackPlayer(plugin.nativeFallback) : null,
+        preference: parsePlayerPreference(opt["pfh-player"]),
         companionEnabled: opt["pfh-companion"] !== "off",
         fetch: (url, init) => win.fetch(url, init),
         nextCommandId: () => ++commandId,
       },
     });
+    plugin.activePath = () => bindings.playbackPath();
     const scheme = opt["pfh-scheme"] === "library" ? "library" : "server";
     const dropParams = (opt["pfh-drop-params"] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 

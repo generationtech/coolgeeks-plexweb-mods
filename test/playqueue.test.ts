@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildContainerPath,
   buildCreatePlayQueueRequest,
   buildGetPlayQueueRequest,
   buildListingUri,
@@ -107,6 +108,23 @@ describe("buildSectionPath / buildListingUri", () => {
   it("rejects unsafe machine identifiers and missing UUIDs", () => {
     expect(() => buildListingUri({ machineIdentifier: "a/b" }, { sectionId: 1, params: "" })).toThrow(/machineIdentifier/);
     expect(() => buildListingUri(server, { sectionId: 1, params: "" }, "library")).toThrow(/librarySectionUUID/);
+  });
+});
+
+describe("buildContainerPath", () => {
+  it("builds section and children paths with sanitized queries", () => {
+    expect(buildContainerPath({ sectionId: 2, params: "type=1&sort=year:desc&X-Plex-Container-Start=0" })).toBe("/library/sections/2/all?type=1&sort=year:desc");
+    expect(buildContainerPath({ containerPath: "/library/metadata/8/children", params: "excludeAllLeaves=1&includeMeta=1" })).toBe(
+      "/library/metadata/8/children?excludeAllLeaves=1",
+    );
+    expect(buildListingUri(server, { containerPath: "/library/metadata/8/children", params: "" })).toBe(
+      "server://test-machine-identifier/com.plexapp.plugins.library/library/metadata/8/children",
+    );
+  });
+
+  it("rejects other containers and missing ids", () => {
+    expect(() => buildContainerPath({ containerPath: "/library/metadata/8/related", params: "" })).toThrow(/unsupported container path/);
+    expect(() => buildContainerPath({ params: "" })).toThrow(/sectionId or a containerPath/);
   });
 });
 
@@ -275,6 +293,19 @@ describe("parseListingRequest / extractPlexClientHeaders", () => {
     const r = parseListingRequest("/plex/library/sections/12/all?type=2", "https://proxy.example");
     expect(r?.baseUrl).toBe("https://proxy.example/plex");
     expect(r?.params.get("type")).toBe("2");
+  });
+
+  it("recognizes children listings (e.g. a season's episodes)", () => {
+    expect(parseListingRequest("https://plex-server.example:32400/library/metadata/8/children?excludeAllLeaves=1")).toMatchObject({
+      baseUrl: "https://plex-server.example:32400",
+      containerPath: "/library/metadata/8/children",
+      parentRatingKey: "8",
+    });
+  });
+
+  it("ignores Plex Web's background hub queries on the same endpoint", () => {
+    expect(parseListingRequest("https://plex-server.example:32400/library/sections/1/all?sort=addedAt:desc&contentDirectoryID=1&pinnedContentDirectoryID=2,1")).toBeNull();
+    expect(parseListingRequest("https://plex-server.example:32400/library/sections/1/all?type=1&sort=addedAt:desc")?.containerPath).toBe("/library/sections/1/all");
   });
 
   it.each([

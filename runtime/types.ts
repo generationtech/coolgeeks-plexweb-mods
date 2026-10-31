@@ -53,6 +53,13 @@ export interface PatchDef {
    * resolved, so an unfinished mod can never look green.
    */
   todo?: string;
+  /**
+   * Alternatives: patches sharing a group are interchangeable ways to provide
+   * the same capability, listed in order of preference. The group succeeds
+   * when at least one member applies; the first applied member is "active".
+   * Problems of the other members are reported as warnings while one works.
+   */
+  group?: string;
 }
 
 /** API handed to a plugin's init() and start(). */

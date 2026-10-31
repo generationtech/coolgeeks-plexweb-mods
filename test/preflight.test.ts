@@ -158,8 +158,12 @@ describe("preflight CLI", () => {
     expect(json.report.failures).toEqual([]);
     expect(json.report.entries.map((e: any) => [e.patchId, e.status])).toEqual([
       ["play-from-here/native-player", "applied"],
+      ["play-from-here/native-player-fallback", "applied"],
       ["play-from-here/context-menu-module", "applied"],
     ]);
+    expect(json.report.groups[0]).toMatchObject({ name: "play-from-here/player", active: "play-from-here/native-player" });
+    const text = run("--bundle-dir", bundleFixture("wp5-plex-shape")).stdout;
+    expect(text).toMatch(/group play-from-here\/player: active = play-from-here\/native-player; standby = play-from-here\/native-player-fallback/);
     expect(r.status).toBe(0);
   });
 

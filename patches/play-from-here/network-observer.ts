@@ -99,7 +99,7 @@ export function installNetworkObserver(win: Win, onRequest: (req: ObservedReques
  * origin, as seen by the network observer.
  */
 export class ListingTracker {
-  private readonly bySection = new Map<string, ListingContext>();
+  private readonly byContainer = new Map<string, ListingContext>();
   private latest: ListingContext | null = null;
   private readonly headersByOrigin = new Map<string, Record<string, string>>();
 
@@ -122,19 +122,21 @@ export class ListingTracker {
     const l = parseListingRequest(req.url, base);
     if (!l) return;
     const ctx: ListingContext = { ...l, observedAt: this.now() };
-    this.bySection.set(`${l.baseUrl}|${l.sectionId}`, ctx);
+    this.byContainer.set(`${l.baseUrl}|${l.containerPath}`, ctx);
     this.latest = ctx;
   }
 
   /**
-   * The listing for `sectionId` when given (most recent across servers),
-   * otherwise the most recent listing overall.
+   * The listing the route points at: a section's grid (`sectionId`) or a
+   * container's children (`parentRatingKey`, e.g. a season page). With no
+   * route information, the most recent listing.
    */
-  current(sectionId?: string): ListingContext | null {
-    if (sectionId === undefined) return this.latest;
+  current(route: { sectionId?: string; parentRatingKey?: string } = {}): ListingContext | null {
+    if (route.sectionId === undefined && route.parentRatingKey === undefined) return this.latest;
     let best: ListingContext | null = null;
-    for (const l of this.bySection.values()) {
-      if (l.sectionId === sectionId && (!best || l.observedAt >= best.observedAt)) best = l;
+    for (const l of this.byContainer.values()) {
+      const match = route.sectionId !== undefined ? l.sectionId === route.sectionId : l.parentRatingKey === route.parentRatingKey;
+      if (match && (!best || l.observedAt >= best.observedAt)) best = l;
     }
     return best;
   }

@@ -59,6 +59,18 @@ export interface PatchReportEntry {
   applied: string[];
   anchors: AnchorState[];
   issues: PatchIssue[];
+  /** Group of interchangeable patches this one belongs to, if any. */
+  group?: string;
+}
+
+export interface GroupReport {
+  name: string;
+  /** Members in order of preference. */
+  members: string[];
+  /** First member that applied, or null when none did. */
+  active: string | null;
+  /** All members that applied (usable alternatives). */
+  available: string[];
 }
 
 export interface PatchReport {
@@ -69,6 +81,7 @@ export interface PatchReport {
   entries: PatchReportEntry[];
   failures: PatchIssue[];
   warnings: PatchIssue[];
+  groups: GroupReport[];
 }
 
 export interface CapturePoint {
@@ -287,12 +300,24 @@ export class PatchSession {
         applied: [...st.applied],
         anchors: st.anchors.map((a) => ({ ...a, modules: [...a.modules] })),
         issues,
+        ...(st.def.group ? { group: st.def.group } : {}),
       };
     });
+    // Alternatives: while one member of a group works, the others' problems
+    // are warnings (the capability is still there).
+    const groups: GroupReport[] = [];
+    for (const name of [...new Set(entries.map((e) => e.group).filter((g): g is string => !!g))]) {
+      const members = entries.filter((e) => e.group === name);
+      const available = members.filter((e) => e.status === "applied").map((e) => e.patchId);
+      groups.push({ name, members: members.map((e) => e.patchId), active: available[0] ?? null, available });
+      if (available.length) {
+        for (const m of members) m.issues = m.issues.map((i) => ({ ...i, optional: true }));
+      }
+    }
     const all = entries.flatMap((e) => e.issues);
     const failures = all.filter((i) => !i.optional);
     const warnings = all.filter((i) => i.optional);
-    return { ok: failures.length === 0, final, modulesSeen: this.seenModules.size, entries, failures, warnings };
+    return { ok: failures.length === 0, final, modulesSeen: this.seenModules.size, entries, failures, warnings, groups };
   }
 
   // -------------------------------------------------------------------------
@@ -367,9 +392,17 @@ export function formatReport(report: PatchReport): string {
       `${report.entries.length} patches, ${report.modulesSeen} modules scanned, ` +
       `${report.failures.length} failures, ${report.warnings.length} warnings`,
   );
+  for (const g of report.groups) {
+    const standby = g.available.filter((id) => id !== g.active);
+    lines.push(
+      `  group ${g.name}: ${g.active ? `active = ${g.active}` : "NO MEMBER AVAILABLE"}` +
+        (standby.length ? `; standby = ${standby.join(", ")}` : g.active && g.members.length > 1 ? "; no standby available" : ""),
+    );
+  }
   for (const e of report.entries) {
-    const flags = [e.optional ? "optional" : "required", e.lazy ? "lazy" : ""].filter(Boolean).join(", ");
-    lines.push(`  ${e.status === "failed" && e.optional ? "WARN" : mark[e.status]} ${e.patchId} (${flags})`);
+    const flags = [e.optional ? "optional" : "required", e.lazy ? "lazy" : "", e.group ? `group ${e.group}` : ""].filter(Boolean).join(", ");
+    const groupWarn = e.status === "failed" && e.issues.every((i) => i.optional);
+    lines.push(`  ${groupWarn ? "WARN" : mark[e.status]} ${e.patchId} (${flags})`);
     if (e.note) lines.push(`         note: ${e.note}`);
     for (const a of e.anchors) {
       const where = a.hits ? `resolved in ${a.hits} module(s): ${a.modules.join(", ")}${a.hits > a.modules.length ? ", ..." : ""}` : "not resolved";

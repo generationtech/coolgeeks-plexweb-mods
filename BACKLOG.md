@@ -78,14 +78,17 @@ ls "$SNAP"/js | grep -o 'plex-[0-9.]*-[0-9a-f]*' | sort -u   # Plex Web version
 node dist/preflight.cjs --bundle-dir "$SNAP"
 ```
 
-Expected: `chunk globals: webpackChunkplex_web_client` and
-`RESULT: all required anchors resolved`. If your version is not 4.162.1 or
+Expected: `chunk globals: webpackChunkplex_web_client`,
+`group play-from-here/player: active = play-from-here/native-player; standby = play-from-here/native-player-fallback`,
+and `RESULT: all required anchors resolved`. If your version is not 4.162.1 or
 4.163.0, note it in the research doc's findings log. If preflight fails, the
 report names the anchor and why. Fix `patches/play-from-here/plex-anchors.ts`
 following the method in `docs/anchor-research.md` (`--find` lists module
 ids, never code). The most likely casualty of a Plex Web update is
 `bundle.startExistingPlayQueueAction` (an action nothing dispatches in
-4.162.1); the fallback candidate is `ui/player/playerLifecycle/startPlayback`.
+4.162.1). If only it breaks, the group line shows the fallback
+(`queuePlayback`) as active and playback keeps working; fix the primary at
+leisure.
 
 ## B3. E2E auth on your (claimed) server
 

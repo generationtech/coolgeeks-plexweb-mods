@@ -55,10 +55,21 @@ describe("ListingTracker", () => {
     tr.observe({ url: "/library/sections/1/all?type=1&sort=year:desc", headers: { "X-Plex-Token": "test-token" } });
     tr.observe({ url: "/hubs/sections/1", headers: { "X-Plex-Client-Identifier": "test-client" } });
     tr.observe({ url: "/library/sections/4/all?type=8", headers: {} });
-    expect(tr.current("1")?.params.get("sort")).toBe("year:desc");
+    expect(tr.current({ sectionId: "1" })?.params.get("sort")).toBe("year:desc");
     expect(tr.current()?.sectionId).toBe("4");
-    expect(tr.current("9")).toBeNull();
+    expect(tr.current({ sectionId: "9" })).toBeNull();
     expect(tr.headersFor(BASE)).toEqual({ "X-Plex-Token": "test-token", "X-Plex-Client-Identifier": "test-client" });
     expect(tr.headersFor("https://other.example")).toEqual({});
+  });
+
+  it("tracks children listings (season pages) and ignores Plex Web's background hub queries", () => {
+    let t = 0;
+    const tr = new ListingTracker(() => `${BASE}/web/index.html`, () => ++t);
+    tr.observe({ url: "/library/sections/1/all?type=1&sort=year:desc", headers: {} });
+    tr.observe({ url: "/library/sections/1/all?sort=addedAt:desc&contentDirectoryID=1&pinnedContentDirectoryID=2,1", headers: {} });
+    tr.observe({ url: "/library/metadata/8/children?excludeAllLeaves=1", headers: {} });
+    expect(tr.current({ sectionId: "1" })?.params.get("sort")).toBe("year:desc");
+    expect(tr.current({ parentRatingKey: "8" })).toMatchObject({ containerPath: "/library/metadata/8/children", parentRatingKey: "8" });
+    expect(tr.current({ parentRatingKey: "7" })).toBeNull();
   });
 });
