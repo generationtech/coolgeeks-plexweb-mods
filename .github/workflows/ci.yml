@@ -16,7 +16,7 @@ jobs:
     name: gitleaks (full history)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -29,10 +29,10 @@ jobs:
     name: lint + unit tests + build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -54,10 +54,10 @@ jobs:
     needs: checks
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -73,7 +73,7 @@ jobs:
           echo "version=$1" >> "$GITHUB_OUTPUT"
           echo "PMS release: $1"
       - name: Cache the PMS package (downloaded only when the release changes)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.SANDBOX_DIR }}/pms.deb
           key: pms-deb-linux-x86_64-${{ steps.pms.outputs.version }}
