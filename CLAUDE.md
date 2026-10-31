@@ -77,7 +77,9 @@ downloads are blocked, `go install github.com/zricethezav/gitleaks/v8@v8.30.1`.
   pure logic, and the Plex-coupled bindings behind a small interface.
 - `injector/` — the reapply tool (Node + `reapply.sh` wrapper). Linux package
   and Docker installs. Idempotent; dry-run, backup, uninstall.
-- `preflight/` — read-only anchor resolution report against a bundle dir.
+- `preflight/` — read-only anchor resolution report against a bundle dir
+  (`--find <text>` for research: module ids only, never code).
+- `tools/` — snapshot of a public Plex Web URL into `bundle-snapshots/`.
 - `test/` — unit tests with synthetic fake webpack bundles; `e2e/` —
   Playwright tests against a real server (skipped without `PLEX_URL`).
 - `docs/` — research notes (anchor strings only, never code excerpts).
