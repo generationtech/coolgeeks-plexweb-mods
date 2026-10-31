@@ -89,19 +89,22 @@ _Last updated: 2026-10-31 (session 3)._
 **"Play from here" works end to end against a real Plex Media Server.**
 Tested on PMS 1.43.5.11079 with its bundled Plex Web 4.162.1, in a
 throwaway sandbox (unclaimed, localhost only, no account, generated media;
-reproducible with `scripts/sandbox-pms.sh start`). The e2e suite has 6 tests:
+reproducible with `scripts/sandbox-pms.sh start`). The e2e suite has 7 tests:
 
 1. library grid, Detail View and Table View, each after a non-default sort;
 2. a TV season page ("Play from here" on an episode);
 3. an Other Videos library;
 4. a 300-item library: PMS windows the queue (41 of 300 items by default),
    and Plex Web's Next/Previous follow the visible sort across both window
-   edges.
+   edges;
+5. unpaused autoplay in that library (2-second clips): every automatically
+   started item is the next one in visible order, past the first window's
+   end (visible #30 to #52).
 
 In every test, `GET /playQueues/<id>` selects the clicked item at its
 visible index, with the items before and after it in visible order.
 Playback starts in Plex Web's own player and the runtime anchor report is
-clean. All 6 pass with the runtime injected by request interception and
+clean. All 7 pass with the runtime injected by request interception and
 with it applied by the injector, on either player path. CI runs the same
 suite against a fresh sandbox on every push, in all three modes; first green
 run: CI run 12, about 10 minutes for the e2e job.

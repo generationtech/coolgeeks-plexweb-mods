@@ -26,6 +26,8 @@ interface Ctx {
   machineIdentifier: string;
   /** Rating key Plex Web last reported playing (from its /:/timeline requests). */
   nowPlaying(): string | undefined;
+  /** Every item Plex Web reported playing, in order (consecutive repeats collapsed). */
+  played(): string[];
 }
 
 async function setup(page: Page, context: Parameters<typeof injectTokenAuth>[0], request: ConstructorParameters<typeof PlexApi>[0]): Promise<Ctx> {
@@ -43,12 +45,13 @@ async function setup(page: Page, context: Parameters<typeof injectTokenAuth>[0],
     });
     await page.route(/\/web\/plexweb-mods\.js(\?.*)?$/, (route) => route.fulfill({ body: runtime, contentType: "application/javascript" }));
   }
-  let playing: string | undefined;
+  const played: string[] = [];
   page.on("request", (r) => {
     const u = new URL(r.url());
-    if (u.pathname.endsWith("/:/timeline") && u.searchParams.get("ratingKey")) playing = u.searchParams.get("ratingKey")!;
+    const rk = u.pathname.endsWith("/:/timeline") ? u.searchParams.get("ratingKey") : null;
+    if (rk && played.at(-1) !== rk) played.push(rk);
   });
-  return { env, api, ui, machineIdentifier: await api.machineIdentifier(), nowPlaying: () => playing };
+  return { env, api, ui, machineIdentifier: await api.machineIdentifier(), nowPlaying: () => played.at(-1), played: () => [...played] };
 }
 
 /** Clicks "Play from here" on `pick` and returns the created queue's id. */
@@ -173,28 +176,34 @@ test("Other Videos: queue follows the visible sort", async ({ page, context, req
   await expectNativePlayback(c, queueId);
 });
 
-test("300 items: the queue is windowed, and Next/Previous follow the visible sort across the window edges", async ({ page, context, request }) => {
-  const env = e2eEnv();
-  test.skip(!env.bigSectionId, "PLEX_E2E_BIG_SECTION_ID is unset");
-  test.setTimeout(240_000);
-  const c = await setup(page, context, request);
-  await openSection(c, env.bigSectionId!);
+/**
+ * Starts "Play from here" at visible index `start` of the 300-item library
+ * (2-second clips) and returns the visible order and the queue's first window.
+ */
+async function startInBigLibrary(c: Ctx, start: number) {
+  await openSection(c, c.env.bigSectionId!);
   await c.ui.setViewStyle("Table View"); // compact rows: item 31 is reachable without paging
-  const order = await sortAndRead(c, env.bigSectionId!, c.env.sortLabel);
+  const order = await sortAndRead(c, c.env.bigSectionId!, c.env.sortLabel);
   expect(order.length).toBeGreaterThanOrEqual(100);
-  const start = 30;
   const pick = order[start]!;
   const queueId = await playFromHere(c, pick);
   await expectQueueFollows(c, queueId, order, pick);
   await expectNativePlayback(c, queueId);
-
   // Plex windows the queue: only part of it comes back by default.
   const mc = await c.api.playQueueRaw(queueId);
   const returned = (mc.Metadata ?? []).length;
   expect(returned, "PMS windows the play queue").toBeLessThan(order.length);
   const before = (mc.Metadata ?? []).findIndex((m: any) => String(m.playQueueItemID) === String(mc.playQueueSelectedItemID));
   const windowStart = start - before;
-  const windowEnd = windowStart + returned - 1;
+  return { order, queueId, windowStart, windowEnd: windowStart + returned - 1 };
+}
+
+test("300 items: the queue is windowed, and Next/Previous follow the visible sort across the window edges", async ({ page, context, request }) => {
+  const env = e2eEnv();
+  test.skip(!env.bigSectionId, "PLEX_E2E_BIG_SECTION_ID is unset");
+  test.setTimeout(240_000);
+  const c = await setup(page, context, request);
+  const { order, windowStart, windowEnd } = await startInBigLibrary(c, 30);
 
   // Walk with the player's own controls (paused, so autoplay cannot race the clicks).
   await expect.poll(() => c.nowPlaying(), { timeout: 20_000 }).toBeDefined();
@@ -212,4 +221,29 @@ test("300 items: the queue is windowed, and Next/Previous follow the visible sor
     at = prev;
   }
   expect(at, "walked past the window's first item").toBeLessThan(windowStart);
+});
+
+test("300 items: unpaused autoplay follows the visible sort across the window edge", async ({ page, context, request }) => {
+  const env = e2eEnv();
+  test.skip(!env.bigSectionId, "PLEX_E2E_BIG_SECTION_ID is unset");
+  test.setTimeout(300_000);
+  const c = await setup(page, context, request);
+  const start = 30;
+  const { order, windowEnd } = await startInBigLibrary(c, start);
+
+  // No clicks from here on: Plex Web plays each 2-second clip and starts the next by itself.
+  const offsetOf = (rk?: string) => order.indexOf(rk ?? "");
+  await expect
+    .poll(() => offsetOf(c.nowPlaying()), { timeout: 200_000, intervals: [1_000], message: "autoplay reaches past the queue window's last item" })
+    .toBeGreaterThan(windowEnd + 1);
+
+  const played = c.played().map(offsetOf);
+  const fromPick = played.slice(played.indexOf(start));
+  expect(fromPick[0], "playback started at the clicked item").toBe(start);
+  expect(fromPick, "every automatically started item is the next one in the visible order").toEqual(
+    fromPick.map((_, i) => start + i),
+  );
+  const summary = `autoplay walked visible #${start}..#${fromPick.at(-1)} (${fromPick.length} items); the queue's first window ended at #${windowEnd}`;
+  test.info().annotations.push({ type: "autoplay", description: summary });
+  console.log(summary);
 });
