@@ -19,9 +19,9 @@ in the browser, before Plex Web's webpack runtime runs:
   runtime/engine     string-anchored find/replace + export capture (Vencord-style);
                      tracks every anchor and fails loudly and specifically
   play-from-here     watches Plex Web's own listing requests (section, sort, filters),
-                     adds "Play from here" to the item menu, then
+                     adds "Play from here" under "Play Next" in the item menu, then
                      POST /playQueues?uri=<sorted section listing>&key=/library/metadata/<item>&shuffle=0
-                     and hands the queue to Plex Web's native player
+                     and starts it with Plex Web's own "start existing play queue" action
 ```
 
 Everything Plex-specific sits in one file per mod
@@ -54,6 +54,7 @@ Linux package installs usually need root to write the Plex Web directory:
 | `npm run preflight -- --bundle-dir <dir> --find "Play Next"` | research: which modules contain a string (ids only) |
 | `./injector/reapply.sh --snapshot` | copy the server's Plex Web into gitignored `bundle-snapshots/` |
 | `npm run test:e2e` | Playwright against a real server; skips when `PLEX_URL` is unset |
+| `scripts/sandbox-pms.sh start` | throwaway unclaimed PMS (latest package, localhost only, test videos) for e2e |
 | `npm run secrets` | gitleaks over the full history |
 
 Runtime options are passed as `--opt key=value` and end up as
@@ -82,47 +83,50 @@ the experimental companion fallback, `pfh-scheme=library` uses
 
 ## STATUS
 
-_Last updated: 2026-10-31._
+_Last updated: 2026-10-31 (session 2)._
 
-**Built and tested without a server** (198 unit tests, green locally and in CI
-on GitHub-hosted runners: gitleaks full-history scan, lint + typecheck,
-unit tests, build):
+**"Play from here" works end to end against a real Plex Media Server.**
+Tested on PMS 1.43.5.11079 with its bundled Plex Web 4.162.1, run in a
+throwaway sandbox (unclaimed, localhost only, no account; reproducible with
+`scripts/sandbox-pms.sh start`). The e2e test passed all 12 runs after one flake fix (both injection modes):
 
-- Repo rules (`CLAUDE.md`), `.gitignore`, `.env.example`, gitleaks config with
-  Plex-specific rules (tokens, machine ids, section UUIDs, plex.direct names,
-  LAN IPs) and tests for those rules, pre-commit hook, CI.
-- Patch engine + webpack loader: proven against hand-written webpack 4/5
-  bundles and a real webpack 5 production build (runtime chunk, split
-  chunk, lazy chunk), with anchors resolving and failing exactly as
-  reported.
-- Play from here: playQueue request construction (sorts, filters,
-  sections, keys, both URI schemes) fully unit-tested; listing detection
-  from Plex Web's own requests; DOM menu entry; flow with step-specific
-  errors.
-- Injector: apply / dry-run / uninstall / status / snapshot, backup,
-  cache-busting (`?v=<content hash>`, service-worker warning, HTTP verify),
-  preflight gate, Linux and Docker (Docker path tested against an emulated
-  container).
-- Preflight: read-only, acorn-based module extraction, same engine as the
-  runtime, `--find` for research.
-- E2E skeleton: sort → mid-list "Play from here" → `GET /playQueues/<id>`
-  order assertion; skips without `PLEX_URL`.
+1. sort the library grid by Year;
+2. click "Play from here" in a mid-list card's "..." menu (it appears under
+   "Play Next");
+3. `GET /playQueues/<id>` matches the visible order from that item on;
+4. playback starts in Plex Web's own player;
+5. the runtime anchor report is clean.
 
-**Not verified yet (needs the real server or bundle):**
+The injector applied it to that PMS, verified it over HTTP, re-ran with no
+changes, and uninstalled byte for byte.
 
-- Plex Web could not be downloaded here: `app.plex.tv` / `plex.tv` are
-  blocked by this environment's network policy. **Every Plex Web anchor is
-  `unverified`** (bundle strings, DOM selectors, routes, e2e selectors and
-  storage keys).
-- The native-player hook is a placeholder: the patch is marked `todo`, so
-  preflight and the runtime report `PATCH_INCOMPLETE` and the injector
-  refuses to apply without `--force`. Until it is written, playback can only
-  start through the experimental companion fallback, which is untested.
-- The `POST /playQueues` request shape has not been tried against PMS yet.
+- **Anchors:** researched in the real bundle (webpack 5, chunk global
+  `webpackChunkplex_web_client`); every Plex-coupled anchor in
+  `plex-anchors.ts` is verified. Two were wrong before and were replaced:
+  the menu label is "Add to Queue" (not "Add to Up Next"), and menus have
+  no `role="menu"` container. Preflight reports all anchors OK on 4.162.1,
+  and on the initial chunks of 4.163.0 from app.plex.tv. See
+  `docs/anchor-research.md`.
+- **Native player:** the patch captures Plex Web's own "start existing play
+  queue" action handler and its `appModel`. No placeholder or `todo` is left.
+- **PMS API (B3):** a sorted section `uri` plus `key` yields the visible
+  order from the clicked item on; filters are honoured. Plex Web's own
+  library Play button sends the same `uri` without `key`.
+- **Tooling:** 205 unit tests. CI on GitHub-hosted runners runs gitleaks,
+  lint, tests and the build.
 
-**Next:** BACKLOG.md B1 (find the install and the Plex Web path) → B2 (version)
-→ B3 (curl the playQueue) → B4 (snapshot + preflight + research) → B5 (native
-player adapter) → B6 (e2e auth) → B7 (first real apply + e2e).
+**Not verified yet (needs the owner's server, see BACKLOG.md):**
+
+- the install path and Plex Web version on the real server (B1/B2);
+- e2e auth with a token on a *claimed* server (the storage key in
+  `e2e/auth.ts`, B3);
+- the first real apply (B4).
+
+The companion `playMedia` fallback stays unverified; it runs only if the
+native player is unavailable.
+
+**Next:** BACKLOG.md B1 → B2 → B3 → B4. Optional: B5 (auto-reapply after
+PMS updates), B6 (e2e in CI on the sandbox).
 
 ## License
 

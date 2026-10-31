@@ -1,7 +1,8 @@
 /**
  * Token auth injected into storage before Plex Web boots. Never a stored
  * login (no storageState files). The storage keys are Plex Web internals
- * and UNVERIFIED (BACKLOG B4): adjust here once confirmed.
+ * and UNVERIFIED (BACKLOG B3): the sandbox server was unclaimed and needed no
+ * token, so this path has not run yet. Adjust here once confirmed.
  */
 import type { BrowserContext } from "@playwright/test";
 

@@ -14,7 +14,7 @@ import { e2eEnabled, e2eEnv } from "./env";
 import { PlexApi } from "./plex-api";
 import { PlexWeb, UI } from "./plex-ui";
 
-test.skip(!e2eEnabled, "PLEX_URL is unset: e2e needs a real Plex Media Server (see BACKLOG.md)");
+test.skip(!e2eEnabled, "PLEX_URL is unset: e2e needs a Plex Media Server (scripts/sandbox-pms.sh start, or see BACKLOG.md)");
 
 test("Play from here queues the visible sorted order from the clicked item", async ({ page, context, request }) => {
   const env = e2eEnv();

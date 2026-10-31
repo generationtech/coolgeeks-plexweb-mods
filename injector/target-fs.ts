@@ -24,7 +24,7 @@ export interface TargetFs {
 
 export const PLEX_WEB_INDEX_SUFFIX = "WebClient.bundle/Contents/Resources/index.html";
 
-/** PMS install roots to search when PLEX_WEB_DIR is not set (unverified; see BACKLOG B1). */
+/** PMS install roots to search when PLEX_WEB_DIR is not set. The PMS 1.43.5 package uses the first (verified); Docker images are expected to match (unverified, BACKLOG B1). */
 export const DEFAULT_SEARCH_ROOTS: Record<"linux" | "docker", string[]> = {
   linux: ["/usr/lib/plexmediaserver", "/usr/lib64/plexmediaserver", "/opt/plexmediaserver"],
   docker: ["/usr/lib/plexmediaserver"],

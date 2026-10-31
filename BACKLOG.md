@@ -1,8 +1,13 @@
 # BACKLOG
 
-Work that needs the real Plex server or homelab. Each item has exact
-commands and the expected result, so a future session (or the owner) can
-run it without asking questions.
+Work that needs the owner's real Plex server or homelab. Each item has
+exact commands and the expected result, so a future session (or the owner)
+can run it without asking questions.
+
+Already done without the homelab (see `docs/anchor-research.md`): anchor
+research on Plex Web 4.162.1 (PMS 1.43.5 package) and 4.163.0
+(app.plex.tv); native-player adapter; the playQueue curl test and the e2e,
+both green against a throwaway unclaimed PMS (`scripts/sandbox-pms.sh`).
 
 Conventions:
 
@@ -12,7 +17,7 @@ Conventions:
 - Load the env into your shell first: `set -a; . ./.env; set +a`
 - Record results in `docs/anchor-research.md` (findings log) using
   placeholders for ids, hostnames and library names. Anchor strings only.
-- Order: B0 → B1 → B2 → B3 → B4 → B5 → B6 → B7. B8 and B9 are optional.
+- Order: B0 → B1 → B2 → B3 → B4. B5–B8 are optional.
 
 ---
 
@@ -20,26 +25,29 @@ Conventions:
 
 ```sh
 git clone https://github.com/generationtech/coolgeeks-plexweb-mods && cd coolgeeks-plexweb-mods
+git checkout claude/plex-play-from-here-rzg61g   # until it is merged
 node --version          # expect v22.12 or newer
-gitleaks version        # expect 8.x (see CLAUDE.md for install options)
-npm ci                  # also installs the pre-commit hook (core.hooksPath=.githooks)
+npm ci                  # also installs the pre-commit hook
 npm test                # expect: all tests pass, 0 failed
 npm run build           # expect: dist/plexweb-mods.js, dist/injector.cjs, dist/preflight.cjs, dist/fetch-plex-web.cjs
 cp .env.example .env    # then fill in PLEX_URL, PLEX_TOKEN, PLEX_SECTION_ID, PLEX_INSTALL_TYPE
 ```
 
-Expected: the build succeeds and `.env` exists. `git status` must not list
-`.env` (it is ignored).
+Expected: the build succeeds, `.env` exists, and `git status` does not list
+`.env` (it is ignored). Optional rehearsal with no server and no account:
+`scripts/sandbox-pms.sh start`, then follow B4 against the env it prints.
 
 ## B1. Identify the install type and the Plex Web path
+
+The PMS 1.43.5 package puts Plex Web at
+`/usr/lib/plexmediaserver/Resources/Plug-ins-<build>/WebClient.bundle/Contents/Resources`;
+the injector auto-discovers it. To confirm:
 
 Linux package install:
 
 ```sh
 dpkg -s plexmediaserver 2>/dev/null | grep -i '^version' || rpm -q plexmediaserver
-systemctl is-active plexmediaserver
-sudo find /usr/lib/plexmediaserver /usr/lib64/plexmediaserver /opt/plexmediaserver \
-  -path '*WebClient.bundle/Contents/Resources/index.html' 2>/dev/null
+sudo find /usr/lib/plexmediaserver -path '*WebClient.bundle/Contents/Resources/index.html'
 ```
 
 Docker install:
@@ -49,131 +57,42 @@ docker ps --format '{{.Names}}\t{{.Image}}' | grep -i plex
 docker exec <container> find /usr/lib/plexmediaserver -path '*WebClient.bundle/Contents/Resources/index.html'
 ```
 
-Expected: exactly one `.../WebClient.bundle/Contents/Resources/index.html`.
-Put the result in `.env`: `PLEX_INSTALL_TYPE=linux|docker`,
-`PLEX_WEB_DIR=<that directory, without /index.html>` (for Docker, the path
-inside the container), `PLEX_DOCKER_CONTAINER=<name>`. Then:
+Expected: exactly one path. Put `PLEX_INSTALL_TYPE=linux|docker` and, for
+Docker, `PLEX_DOCKER_CONTAINER=<name>` in `.env`. Set `PLEX_WEB_DIR` only if
+auto-discovery fails. Then:
 
 ```sh
-./injector/reapply.sh --status        # Linux may need: sudo env "PATH=$PATH" ./injector/reapply.sh --status
-curl -s -o /dev/null -w '%{http_code}\n' "$PLEX_URL/web/index.html"
+./injector/reapply.sh --status      # Linux may need: sudo env "PATH=$PATH" ./injector/reapply.sh --status
 ```
 
-Expected: `index.html: pristine (not injected)`, `runtime on target: absent`,
-and HTTP `200`. If the path is somewhere else, set `PLEX_WEB_DIR` and also
-add the root to `DEFAULT_SEARCH_ROOTS` in `injector/target-fs.ts` (with a
-test). Docker note: recreating the container (image update) restores the
-original files, so the injection must be re-applied (B8).
+Expected: `discovered Plex Web at ...`, `index.html: pristine (not injected)`.
+Docker note: recreating the container (image update) restores the original
+files, so the injection must be re-applied (B5).
 
-## B2. Compare the local Plex Web version with app.plex.tv
+## B2. Your server's Plex Web version, preflighted
 
 ```sh
-assets() { curl -sL "$1" | grep -oE '(src|href)="[^"]+\.(js|css)[^"]*"' | sort; }
-assets "$PLEX_URL/web/index.html"            > /tmp/pw-local.txt
-assets "https://app.plex.tv/desktop/index.html" > /tmp/pw-public.txt
-diff /tmp/pw-local.txt /tmp/pw-public.txt && echo SAME BUILD
-curl -s -H 'Accept: application/json' "$PLEX_URL/identity"   # PMS version
-```
-
-Expected: either `SAME BUILD`, or differing hashed file names (different
-Plex Web versions). Either way, research and patch against the **local**
-copy (that is what gets patched). Optionally snapshot the public one too
-(this sandbox could not reach it; see docs/anchor-research.md):
-
-```sh
-NODE_USE_ENV_PROXY=1 node dist/fetch-plex-web.cjs --url https://app.plex.tv/desktop/
-```
-
-Expected: `saved N file(s) to bundle-snapshots/app.plex.tv-<date>`.
-It only contains the initial chunks; the local snapshot (B4) is complete.
-
-## B3. curl-test POST /playQueues with a sorted uri + key
-
-```sh
-MID=$(curl -s -H 'Accept: application/json' "$PLEX_URL/identity" \
-  | node -pe 'JSON.parse(require("fs").readFileSync(0)).MediaContainer.machineIdentifier')
-H=(-H 'Accept: application/json' -H "X-Plex-Token: $PLEX_TOKEN" -H 'X-Plex-Client-Identifier: plexweb-mods-curl')
-keys() { node -pe 'JSON.parse(require("fs").readFileSync(0)).MediaContainer.Metadata.map(m=>m.ratingKey).join(" ")'; }
-
-# 1. the sorted listing (movies section; adjust type for others)
-curl -s "${H[@]}" "$PLEX_URL/library/sections/$PLEX_SECTION_ID/all?type=1&sort=year:desc&X-Plex-Container-Start=0&X-Plex-Container-Size=10" | keys
-KEY=<the 4th key printed above>
-
-# 2. create the queue from that item, in that order
-URI="server://$MID/com.plexapp.plugins.library/library/sections/$PLEX_SECTION_ID/all?type=1&sort=year:desc"
-curl -s -X POST --get "${H[@]}" \
-  --data-urlencode type=video --data-urlencode "uri=$URI" \
-  --data-urlencode "key=/library/metadata/$KEY" --data shuffle=0 --data repeat=0 \
-  "$PLEX_URL/playQueues" | tee /tmp/pq.json | node -pe '
-    const c = JSON.parse(require("fs").readFileSync(0)).MediaContainer;
-    [c.playQueueID, c.playQueueSelectedItemOffset, c.playQueueSelectedMetadataItemID, c.Metadata.map(m=>m.ratingKey).join(" ")].join("\n")'
-```
-
-Expected: a `playQueueID`; `playQueueSelectedMetadataItemID` = `$KEY`; the
-keys from the selected offset onward equal the sorted listing from `$KEY`
-onward. Record whether items **before** `$KEY` are included (the code
-handles both via `itemsFromSelected`). Then try the variants and record
-which work (adjust `patches/play-from-here/playqueue.ts` plus its tests if
-any differ):
-
-- sort written encoded (`sort=year%3Adesc`) inside the uri: same result?
-- without `type=1` in the uri;
-- with `includeCollections=1` in the uri (does the queue expand collections? if it misbehaves, drop it by default via `DROPPED_LISTING_PARAMS`);
-- `library://<section uuid>/directory/<url-encoded path>` (uuid from `curl -s "${H[@]}" "$PLEX_URL/library/sections"`, field `uuid`);
-- a TV section (`type=2`: does a show expand to its episodes?) and music (`type=10`, queue `type=audio`).
-
-Then the read-back used by e2e:
-
-```sh
-PQ=$(node -pe 'JSON.parse(require("fs").readFileSync("/tmp/pq.json")).MediaContainer.playQueueID')
-curl -s "${H[@]}" "$PLEX_URL/playQueues/$PQ?window=200&own=1" | keys
-```
-
-Expected: the same order. Play queues are temporary; no cleanup needed.
-
-## B4. Anchor research against the local bundle (preflight)
-
-```sh
-./injector/reapply.sh --snapshot      # read-only copy into bundle-snapshots/<type>-<timestamp>/ (gitignored)
+./injector/reapply.sh --snapshot          # -> bundle-snapshots/<type>-<timestamp>/ (gitignored)
 SNAP=$(ls -d bundle-snapshots/*/ | tail -1)
+ls "$SNAP"/js | grep -o 'plex-[0-9.]*-[0-9a-f]*' | sort -u   # Plex Web version
 node dist/preflight.cjs --bundle-dir "$SNAP"
-node dist/preflight.cjs --bundle-dir "$SNAP" --find "Play Next" --find "Add to Up Next"
-node dist/preflight.cjs --bundle-dir "$SNAP" --find /playQueues --find playQueueSelectedItemID
 ```
 
-Expected: `chunk globals:` shows one `webpackChunk<name>` and thousands of
-modules are extracted (if not, the bundle is not webpack or extraction
-needs work: write that down and stop). Today the report is expected to
-FAIL on `play-from-here/native-player`: `FIND_AMBIGUOUS` (anchors too broad)
-and `PATCH_INCOMPLETE` (adapter not written). Work through the questions
-in `docs/anchor-research.md` ("Open research questions"), update
-`patches/play-from-here/plex-anchors.ts` (status `verified` plus the Plex
-Web version), and log the findings (anchor strings only, never code).
+Expected: `chunk globals: webpackChunkplex_web_client` and
+`RESULT: all required anchors resolved`. If your version is not 4.162.1 or
+4.163.0, note it in the research doc's findings log. If preflight fails, the
+report names the anchor and why. Fix `patches/play-from-here/plex-anchors.ts`
+following the method in `docs/anchor-research.md` (`--find` lists module
+ids, never code). The most likely casualty of a Plex Web update is
+`bundle.startExistingPlayQueueAction` (an action nothing dispatches in
+4.162.1); the fallback candidate is `ui/player/playerLifecycle/startPlayback`.
 
-## B5. Write the native-player adapter
+## B3. E2E auth on your (claimed) server
 
-With the module from B4 identified:
-
-1. Narrow `bundle.nativePlayerModule` so preflight locates exactly 1 module.
-2. In `createPatches()` (`patches/play-from-here/index.ts`), build a
-   `NativePlayer` from the captured exports in `onExports`, call
-   `plugin.registerNativePlayer(...)`, return `true`; or, if the entry point
-   is not exported, use a `replacements` patch that calls
-   `$self.registerNativePlayer(...)` from inside the module.
-3. Remove `todo` from the native-player patch; set `all: false`.
-4. Add a unit test with a synthetic module of the same *shape* (write it
-   yourself; never paste Plex code).
-
-Expected: `npm test` green and
-`node dist/preflight.cjs --bundle-dir "$SNAP"` ends with
-`RESULT: all required anchors resolved`.
-
-Until then, the experimental companion fallback can be tried (needs Plex
-Web Settings > "Advertise as player" enabled in that browser): apply with
-`--force --no-banner` (B7) and use the menu entry. If it does not start
-playback, apply with `--opt pfh-companion=off`. Record the result.
-
-## B6. E2E auth and selectors
+The sandbox server was unclaimed and needed no token. A claimed server
+does, so the e2e injects `PLEX_TOKEN` into browser storage
+(`e2e/auth.ts`, key `myPlexAccessToken`). That storage key is the one
+remaining unverified e2e assumption.
 
 ```sh
 curl -s -o /dev/null -w '%{http_code}\n' -H "X-Plex-Token: $PLEX_TOKEN" "$PLEX_URL/library/sections"   # expect 200
@@ -182,39 +101,34 @@ npm run build && npx playwright test   # route mode: injects the local build via
 ```
 
 Get the token from a signed-in Plex Web (DevTools > Network: the
-`X-Plex-Token` of any request), into `.env` only. Expected: the library
-loads **without** a sign-in screen. If a sign-in screen appears, open
-DevTools > Application > Local Storage for `$PLEX_URL` in a signed-in
-browser, find the key(s) holding the token, and update
-`TOKEN_STORAGE_KEYS` in `e2e/auth.ts`. Then fix the selectors in
-`e2e/plex-ui.ts` (sort button and menu, card "more" button, player) until
-the test reaches the "Play from here" click. Debug with
-`PW_TRACE=1 npx playwright test` (traces and screenshots can contain the
-token and library names: keep them local, they are gitignored).
+`X-Plex-Token` of any request), into `.env` only. Expected: `1 passed`.
+If the run shows a sign-in screen, find the key(s) holding the token in a
+signed-in browser (DevTools > Application > Local Storage for `$PLEX_URL`),
+put them in `TOKEN_STORAGE_KEYS` in `e2e/auth.ts`, and promote the note
+there to verified. Set `PLEX_E2E_SORT_LABEL` to a sort your library offers
+(default `Year`). Debug with `PW_TRACE=1` (traces and screenshots can contain
+the token and library names: keep them local, they are gitignored).
 
-## B7. First real apply, then e2e against it
+## B4. First real apply, then e2e against it
 
 ```sh
 npm run build
 ./injector/reapply.sh --dry-run        # preflight report + a one-line diff of index.html; nothing written
 ./injector/reapply.sh                  # Linux may need: sudo env "PATH=$PATH" ./injector/reapply.sh
-./injector/reapply.sh --verify         # fetches $PLEX_URL/web/index.html and the runtime over HTTP
-curl -sI "$PLEX_URL/web/index.html" | grep -i -E 'cache-control|content-security-policy'
+./injector/reapply.sh --verify         # needs PLEX_URL; fetches index.html and the runtime over HTTP
 ```
 
 Expected: exit 0, `verified: index.html references plexweb-mods.js?v=<hash>`,
-and both `HTTP verify` lines. Exit 3 means preflight failed: go back to
-B4/B5 (or `--force` to try the companion fallback knowingly). In the
-browser: hard-reload once (Ctrl+Shift+R), then in the DevTools console:
+`HTTP verify: index.html served with the new tag (Cache-Control: no-cache)`,
+and `HTTP verify: runtime served and matches the build`. In the browser:
+hard-reload once (Ctrl+Shift+R), open a library's **Library** tab, sort it,
+open an item's "..." menu, and you should see "Play from here" under
+"Play Next". In the DevTools console:
 
 ```js
-__plexwebMods.printReport({ final: true })
 document.documentElement.dataset.plexwebModsStatus   // expect "ok"
+__plexwebMods.printReport({ final: true })
 ```
-
-If a `content-security-policy` header without `'unsafe-eval'` shows up,
-replacement patches cannot compile (they report `COMPILE_ERROR`); export
-captures need no eval and still work. Note it in the research doc.
 
 Then the e2e against the applied install:
 
@@ -225,7 +139,7 @@ PLEX_E2E_INJECT=server npx playwright test   # expect: 1 passed
 Rollback at any time: `./injector/reapply.sh --uninstall` (restores
 index.html byte for byte, removes the runtime file and the backup).
 
-## B8. (optional) Re-apply automatically after PMS updates
+## B5. (optional) Re-apply automatically after PMS updates
 
 Re-running is safe: reapply is idempotent and, after an update, refuses to
 patch if preflight fails (Plex stays untouched; exit 3).
@@ -256,10 +170,20 @@ journalctl -u plexweb-mods.service -n 50    # after the next PMS update: expect 
 Docker: run `./injector/reapply.sh` after every container (re)start, e.g. a
 cron entry `*/15 * * * * cd /path/to/repo && ./injector/reapply.sh >> ~/plexweb-mods.log 2>&1`.
 
-## B9. (optional) Self-hosted runner for e2e, with fork-PR protections
+## B6. (optional) E2E in CI against the sandbox PMS
 
-CI stays on GitHub-hosted runners. A self-hosted runner on a public repo
-is risky; only add one for e2e, and only like this:
+`scripts/sandbox-pms.sh` runs on a plain Linux box with no account, so the
+e2e could run on GitHub-hosted runners (no self-hosted runner needed):
+add a job that installs `ffmpeg`, runs `npm ci && npm run build`,
+`scripts/sandbox-pms.sh start`, `npx playwright install --with-deps chromium`,
+evaluates the printed env, then runs `npx playwright test` in both injection
+modes. Expected: green in a few minutes (the package download is about 80 MB).
+Decide first whether downloading PMS on every CI run is acceptable to you.
+
+## B7. (optional) Self-hosted runner for e2e against the homelab, with fork-PR protections
+
+Only if B6 is not enough (e.g. to test your real libraries). A
+self-hosted runner on a public repo is risky; only like this:
 
 1. Repo Settings > Actions > General: "Fork pull request workflows from
    outside collaborators" = **Require approval for all external
@@ -278,11 +202,11 @@ is risky; only add one for e2e, and only like this:
 Expected: the e2e workflow runs only when dispatched manually and only
 after approval; PRs from forks never reach the runner.
 
-## B10. Housekeeping (no server needed, low priority)
+## B8. (optional) Hardening, no server needed
 
-- Merge the session branch `claude/plex-play-from-here-rzg61g` into `main`
-  (this session's harness could only push to that branch).
 - Pin GitHub Actions to commit SHAs and pin the gitleaks tarball's sha256
   in `scripts/ci/install-gitleaks.sh` (today it checks the release's own
   checksums file).
-- Localized UIs: `dom.menuAnchorLabels` holds English labels only.
+- Localized UIs: `dom.menuAnchorLabels` holds English labels. Plex Web ships
+  `translations/<lang>.json` (English source string → translation), so the
+  runtime could load the active language's labels instead.
