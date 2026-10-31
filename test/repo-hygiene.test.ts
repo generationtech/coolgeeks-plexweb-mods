@@ -86,4 +86,10 @@ describe("repo scaffolding", () => {
     expect(ci).not.toMatch(/self-hosted/);
     for (const m of ci.matchAll(/runs-on:\s*(\S+)/g)) expect(m[1]).toMatch(/^ubuntu-/);
   });
+
+  it("CI needs no secrets (the e2e job runs an unclaimed sandbox PMS)", () => {
+    const ci = read(".github/workflows/ci.yml");
+    expect(ci).not.toMatch(/secrets\./);
+    expect(ci).not.toMatch(/PLEX_TOKEN/);
+  });
 });

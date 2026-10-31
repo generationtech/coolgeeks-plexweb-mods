@@ -44,3 +44,58 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+
+  e2e:
+    # Real PMS (latest Linux release, extracted, unclaimed, localhost only) with
+    # generated media, via scripts/sandbox-pms.sh. No account, no token, no
+    # secrets: keep it that way.
+    name: e2e (sandbox PMS, generated media)
+    runs-on: ubuntu-latest
+    needs: checks
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install ffmpeg
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends ffmpeg
+      - run: npm ci
+      - run: npm run build
+      - name: Resolve the latest PMS release
+        id: pms
+        run: |
+          echo "SANDBOX_DIR=$RUNNER_TEMP/plex-sandbox" >> "$GITHUB_ENV"
+          set -- $(scripts/sandbox-pms.sh version)
+          echo "version=$1" >> "$GITHUB_OUTPUT"
+          echo "PMS release: $1"
+      - name: Cache the PMS package (downloaded only when the release changes)
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SANDBOX_DIR }}/pms.deb
+          key: pms-deb-linux-x86_64-${{ steps.pms.outputs.version }}
+      - name: Install Playwright's Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Start the sandbox PMS
+        run: scripts/sandbox-pms.sh start
+      - name: e2e, runtime injected by interception (auto path)
+        run: |
+          eval "$(scripts/sandbox-pms.sh env)"
+          npx playwright test
+      - name: e2e, runtime injected by interception (fallback player forced)
+        run: |
+          eval "$(scripts/sandbox-pms.sh env)"
+          PLEX_E2E_PLAYER=fallback npx playwright test
+      - name: e2e against an injector-applied install
+        run: |
+          eval "$(scripts/sandbox-pms.sh env)"
+          ./injector/reapply.sh --verify
+          PLEX_E2E_INJECT=server npx playwright test
+          ./injector/reapply.sh --status
+          ./injector/reapply.sh --uninstall
+      - name: Stop the sandbox PMS
+        if: always()
+        run: scripts/sandbox-pms.sh stop
