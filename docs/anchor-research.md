@@ -242,3 +242,10 @@ refused by the sandbox network and were not needed.
   The derived-image patch stage (`image/apply-in-build.sh`) applied cleanly
   to it: `index.html` = original + one line. Export-capture shapes on 4.160.0
   are only checked at runtime: not live-verified yet (BACKLOG B4).
+- 2026-11-01 (session 5, B4 first run): against a claimed PMS 1.43.4.10903
+  (Plex Web 4.160.0) with a token, the e2e's `myPlexAccessToken` storage
+  key works: Plex Web signs in as the token's account. That account is in a
+  Plex Home, so a fresh profile stops at "Select User". In the 4.160.0
+  bundle, the startup lock is skipped when the device setting `autoLogin`
+  ("Automatically Sign In", stored as JSON under `deviceSettings`) is
+  true; `e2e/auth.ts` now sets it. Unverified until the next run passes.

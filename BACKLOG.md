@@ -167,8 +167,12 @@ active and playback keeps working.
 Route mode injects the local build into the test browser by request
 interception: this proves the mod live on your Plex Web without changing
 the server. A claimed server needs a token, which the e2e puts into
-browser storage (`e2e/auth.ts`, key `myPlexAccessToken`, the one remaining
-unverified e2e assumption).
+browser storage (`e2e/auth.ts`, key `myPlexAccessToken`: verified on
+4.160.0). It also turns on Plex Web's per-device "Automatically Sign In"
+(`deviceSettings` → `autoLogin`), because an account in a Plex Home (more
+than one user, or a PIN) otherwise starts at "Select User" on the test's
+fresh browser profile. That setting is the one remaining unverified e2e
+assumption.
 
 ```sh
 curl -sS -o /dev/null -w '%{http_code}\n' -H "X-Plex-Token: $PLEX_TOKEN" "$PLEX_URL/library/sections"   # expect 200
@@ -197,8 +201,14 @@ companion path (or default `pfh-companion` to `off`) and note it in
 `api.companionPlayMedia` to verified with the versions. If the run shows a
 sign-in screen, find the key(s) holding the token in a signed-in browser
 (DevTools > Application > Local Storage for `$PLEX_URL`), put them in
-`TOKEN_STORAGE_KEYS` in `e2e/auth.ts`, and promote the note there to
-verified. Set `PLEX_E2E_SORT_LABEL` to a sort your library offers (default
+`TOKEN_STORAGE_KEYS` in `e2e/auth.ts`. If it stops at "Select User"
+although `autoLogin` is set, turn on Settings > (this device) > "Automatically
+Sign In" in a signed-in browser and compare its `deviceSettings` value
+(key names only) with `DEVICE_SETTINGS` in `e2e/auth.ts`. When the run
+gets past sign-in, mark `DEVICE_SETTINGS` verified there.
+`PLEX_E2E_TV_SECTION_ID` must be a TV library (type `show`) and
+`PLEX_E2E_OTHER_SECTION_ID` an Other Videos library (agent
+`tv.plex.agents.none`); leave either unset if you have none. Set `PLEX_E2E_SORT_LABEL` to a sort your library offers (default
 `Year`). Debug with `PW_TRACE=1` (traces and screenshots can contain the
 token and library names: keep them local, they are gitignored). The tests
 start real playback: it shows up in PMS's log like any playback by your

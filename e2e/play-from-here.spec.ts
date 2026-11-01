@@ -155,8 +155,9 @@ test("TV: Play from here on an episode in a season view", async ({ page, context
   const env = e2eEnv();
   test.skip(!env.tvSectionId, "PLEX_E2E_TV_SECTION_ID is unset");
   const c = await setup(page, context, request);
-  const show = (await c.api.listingKeys(env.tvSectionId!, new URLSearchParams("type=2")))[0]!;
-  const season = (await c.api.childrenKeys(show))[0]!;
+  const shows = await c.api.listingKeys(env.tvSectionId!, new URLSearchParams("type=2"));
+  expect(shows.length, `PLEX_E2E_TV_SECTION_ID=${env.tvSectionId} lists no shows: set it to a TV library (type "show") or unset it`).toBeGreaterThan(0);
+  const season = (await c.api.childrenKeys(shows[0]!))[0]!;
   const episodes = await c.api.childrenKeys(season);
   expect(episodes.length, "need at least 3 episodes in the first season").toBeGreaterThanOrEqual(3);
   await c.ui.open(c.ui.detailsUrl(env.url, c.machineIdentifier, season));

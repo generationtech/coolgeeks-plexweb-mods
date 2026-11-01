@@ -193,7 +193,7 @@ same PMS release: it is flaky (BACKLOG B11).
 - **PMS API:** a sorted section or season `uri` plus `key` yields the visible
   order from the clicked item on; filters are honoured. Plex Web's own
   library Play button sends the same `uri` without `key`.
-- **Tooling:** 272 unit tests. CI on GitHub-hosted runners runs gitleaks,
+- **Tooling:** 280 unit tests. CI on GitHub-hosted runners runs gitleaks,
   lint, tests, the build, the sandbox e2e, and a real podman build of the
   derived image against synthetic Plex bases (one must pass, one must fail
   on preflight; `scripts/ci/image-smoke.sh`), using Node 24 actions
@@ -205,8 +205,10 @@ same PMS release: it is flaky (BACKLOG B11).
 - the container host checks, the `*.plex.direct` URL and the absence of a
   CSP header (B1);
 - a live e2e on a *claimed* server with a token, server untouched: the
-  token storage key in `e2e/auth.ts`, the runtime on Plex Web 4.160.0, and
-  the companion check (B4);
+  token storage key is verified on Plex Web 4.160.0 (the e2e signs in as
+  the token's account); still open are getting past "Select User" for an
+  account in a Plex Home (`autoLogin` in `e2e/auth.ts`), the runtime on
+  4.160.0, and the companion check (B4);
 - the derived image built from a real Plex image and deployed (B5).
 
 The weekly breakage canary (B8) is designed but not built.
