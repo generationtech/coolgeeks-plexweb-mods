@@ -30,7 +30,10 @@ Everything Plex-specific sits in one file per mod
 
 ## Usage
 
-Requirements: Node ≥ 22.12, and for development, gitleaks. `npm ci` installs
+Requirements: Node ≥ 22.12, and for development, gitleaks. In the browser,
+Plex Web must be served without a Content-Security-Policy that blocks
+`eval` (PMS sends none). If a reverse proxy adds one, `script-src` needs
+`'self'` and `'unsafe-eval'`. No inline script is used. `npm ci` installs
 the pre-commit hook (gitleaks, lint, tests). When the `node` on PATH is
 missing or too old, as in some editors' git panels, the hook loads
 `$NVM_DIR/nvm.sh` (default `~/.nvm`) itself.
@@ -59,13 +62,29 @@ the container runs with `--rm`.
 **Read-only root filesystem** (`--read-only`, e.g. a hardened Podman unit):
 nothing can be changed in place, and the injector refuses up front (exit 1)
 rather than fail halfway. `--status`, `--dry-run` and `--snapshot` still work.
-Build a derived image instead (`image/`).
+Build a **derived image** instead; it also survives every recreate:
+
+```sh
+npm run build                      # also writes the build context dist/image/
+# copy dist/image/ to the host that holds your Plex image, then there:
+./build-image.sh --plex-image <your plex image> \
+  --node-image docker.io/library/node:22-bookworm-slim@sha256:<digest> \
+  --tag <your plex image name>-mods:<version>
+# point the container definition at the new tag; restart
+```
+
+A throwaway Node stage runs the injector, preflight included, against the
+Plex Web inside your image. If a required anchor fails, the build fails and
+your running image is untouched. The result is your image plus one layer
+with `index.html` and `plexweb-mods.js`; user, entrypoint and everything
+else are inherited. Rebuild after every Plex image update. Details:
+[image/README.md](image/README.md).
 
 | Command | Purpose |
 | --- | --- |
 | `npm test` | unit tests (no server needed) |
 | `npm run lint` | eslint + typecheck |
-| `npm run build` | `dist/plexweb-mods.js`, `dist/injector.cjs`, `dist/preflight.cjs`, `dist/fetch-plex-web.cjs` |
+| `npm run build` | `dist/plexweb-mods.js`, `dist/injector.cjs`, `dist/preflight.cjs`, `dist/fetch-plex-web.cjs`, and the image build context `dist/image/` |
 | `npm run preflight -- --bundle-dir <dir>` | read-only anchor report for a Plex Web dir (exit 1 on failure) |
 | `npm run preflight -- --bundle-dir <dir> --find "Play Next"` | research: which modules contain a string (ids only) |
 | `./injector/reapply.sh --snapshot` | copy the server's Plex Web into gitignored `bundle-snapshots/` |
@@ -89,6 +108,7 @@ auto). `--no-banner` keeps failures in the console only. In the browser,
 | --- | --- |
 | `runtime/` | loader (webpack hooks), patch engine, bootstrap, config, UI |
 | `patches/play-from-here/` | patch definitions, pure playQueue builder, Plex bindings behind small interfaces |
+| `image/` | derived container image (Containerfile, build wrapper) for read-only or recreated Plex containers |
 | `injector/` | reapply tool + `reapply.sh` wrapper (Linux package, Docker and Podman; refuses read-only containers) |
 | `preflight/` | module extraction from bundle files, anchor report, `--find` |
 | `tools/` | public Plex Web snapshot tool |
@@ -152,7 +172,7 @@ Node 24 actions, with no Node 20 deprecation warning.
 - **PMS API:** a sorted section or season `uri` plus `key` yields the visible
   order from the clicked item on; filters are honoured. Plex Web's own
   library Play button sends the same `uri` without `key`.
-- **Tooling:** 247 unit tests. CI on GitHub-hosted runners runs gitleaks,
+- **Tooling:** 266 unit tests. CI on GitHub-hosted runners runs gitleaks,
   lint, tests, the build and the sandbox e2e, using Node 24 actions
   (`actions/checkout@v7`, `actions/setup-node@v7`, `actions/cache@v6`). The
   PMS package is cached by release version; no secrets are used.

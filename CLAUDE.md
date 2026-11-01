@@ -83,6 +83,10 @@ downloads are blocked, `go install github.com/zricethezav/gitleaks/v8@v8.30.1`.
 - `injector/` — the reapply tool (Node + `reapply.sh` wrapper). Linux package
   and Docker/Podman installs (refuses read-only containers). Idempotent;
   dry-run, backup, uninstall.
+- `image/` — derived container image for read-only/recreated Plex
+  containers: Containerfile template (no site values; every input is a build
+  arg), patch-stage script, build wrapper. `npm run build` packs it into
+  `dist/image/`.
 - `preflight/` — read-only anchor resolution report against a bundle dir
   (`--find <text>` for research: module ids only, never code).
 - `tools/` — snapshot of a public Plex Web URL into `bundle-snapshots/`.

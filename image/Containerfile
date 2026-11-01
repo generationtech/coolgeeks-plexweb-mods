@@ -1,0 +1,31 @@
+# plexweb-mods derived image: your Plex image plus the mods, applied and
+# preflighted at build time. A template without site-specific values: every
+# input is a build argument, passed by build-image.sh (README.md next to it).
+#
+#   PLEX_IMAGE    the Plex image to extend (PMS Linux package layout under
+#                 /usr/lib/plexmediaserver), e.g. localhost/plex:1.2.3.4-abcdef012
+#   NODE_IMAGE    a Node >= 22.12 image pinned by digest. Used only in the
+#                 throwaway patch stage; nothing from it reaches the result.
+#   MODS_ARGS     extra injector flags (--opt key=value, --no-banner)
+#   MODS_VERSION  label value (the build context's VERSION file)
+#
+# If a required anchor does not resolve in this Plex Web, the injector exits
+# 3, the RUN fails and so does the build: the image you run keeps working.
+# The result is PLEX_IMAGE plus one layer holding exactly two files in Plex
+# Web's directory (index.html, plexweb-mods.js; root-owned, mode 0644). User,
+# entrypoint, command, ports and everything else are inherited unchanged.
+ARG PLEX_IMAGE
+ARG NODE_IMAGE
+
+FROM ${PLEX_IMAGE} AS plex
+
+FROM ${NODE_IMAGE} AS patch
+COPY --from=plex /usr/lib/plexmediaserver/Resources /usr/lib/plexmediaserver/Resources
+COPY injector.cjs plexweb-mods.js apply-in-build.sh /plexweb-mods/
+ARG MODS_ARGS=
+RUN sh /plexweb-mods/apply-in-build.sh ${MODS_ARGS}
+
+FROM plex
+COPY --from=patch /out/ /
+ARG MODS_VERSION=unknown
+LABEL io.github.generationtech.plexweb-mods.version="${MODS_VERSION}"

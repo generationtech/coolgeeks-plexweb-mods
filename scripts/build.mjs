@@ -3,8 +3,10 @@
 //   dist/injector.cjs     reapply tool (Node)
 //   dist/preflight.cjs    anchor preflight (Node)
 //   dist/fetch-plex-web.cjs  public Plex Web snapshot tool (Node)
+//   dist/image/           build context for a derived container image (image/)
 import { build } from "esbuild";
-import { readFileSync, mkdirSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
@@ -44,4 +46,22 @@ for (const [entry, outfile] of entries) {
   }
   await build({ ...node, entryPoints: [entry], outfile, banner: { js: "#!/usr/bin/env node" } });
 }
-console.log(`built ${version}`);
+
+// dist/image/: build context for a derived container image (image/README.md).
+// VERSION carries the runtime's content hash, the same ?v= value the injector
+// writes into index.html; SHA256SUMS is checked by build-image.sh.
+const IMAGE_FILES = ["Containerfile", "apply-in-build.sh", "build-image.sh", "README.md"];
+const imageDir = "dist/image";
+rmSync(imageDir, { recursive: true, force: true });
+mkdirSync(imageDir, { recursive: true });
+for (const f of IMAGE_FILES) copyFileSync(`image/${f}`, `${imageDir}/${f}`);
+for (const f of ["injector.cjs", "plexweb-mods.js"]) copyFileSync(`dist/${f}`, `${imageDir}/${f}`);
+for (const f of ["apply-in-build.sh", "build-image.sh"]) chmodSync(`${imageDir}/${f}`, 0o755);
+const sha256 = (p) => createHash("sha256").update(readFileSync(p)).digest("hex");
+writeFileSync(`${imageDir}/VERSION`, `${version} runtime=${sha256(`${imageDir}/plexweb-mods.js`).slice(0, 12)}\n`);
+const sums = readdirSync(imageDir)
+  .sort()
+  .map((f) => `${sha256(`${imageDir}/${f}`)}  ${f}\n`)
+  .join("");
+writeFileSync(`${imageDir}/SHA256SUMS`, sums);
+console.log(`built ${version} (and ${imageDir}/)`);
