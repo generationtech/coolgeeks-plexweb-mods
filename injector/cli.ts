@@ -34,10 +34,10 @@ options:
   --install-type T     linux | docker | podman   (env PLEX_INSTALL_TYPE, default linux)
   --web-dir DIR        Plex Web dir with index.html (env PLEX_WEB_DIR; auto-discovered if unset)
   --container NAME     docker/podman container  (env PLEX_CONTAINER or PLEX_DOCKER_CONTAINER, default plex)
+  --runtime PATH       built runtime            (default dist/plexweb-mods.js next to this tool)
 
 Containers with a read-only root filesystem (podman/docker run --read-only)
 cannot be changed in place: build a derived image instead (image/, README.md).
-  --runtime PATH       built runtime            (default dist/plexweb-mods.js next to this tool)
 `;
 
 function fail(msg: string): never {
