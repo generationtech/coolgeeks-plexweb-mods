@@ -83,6 +83,7 @@ auto). `--no-banner` keeps failures in the console only. In the browser,
 | `e2e/` | Playwright e2e (token auth injected into storage; never a stored login) |
 | `docs/anchor-research.md` | anchor findings (anchor strings only) |
 | `research/sandbox-probes/` | the one-off sandbox scripts behind those findings (historical; e2e supersedes them) |
+| `local/` | gitignored owner-only notes and tools (homelab specifics); the hook and gitleaks refuse it even with `git add -f` |
 | `BACKLOG.md` | everything that needs the real server, with exact commands |
 | `CLAUDE.md` | standing rules for this public repo |
 
@@ -138,7 +139,7 @@ Node 24 actions, with no Node 20 deprecation warning.
 - **PMS API:** a sorted section or season `uri` plus `key` yields the visible
   order from the clicked item on; filters are honoured. Plex Web's own
   library Play button sends the same `uri` without `key`.
-- **Tooling:** 233 unit tests. CI on GitHub-hosted runners runs gitleaks,
+- **Tooling:** 241 unit tests. CI on GitHub-hosted runners runs gitleaks,
   lint, tests, the build and the sandbox e2e, using Node 24 actions
   (`actions/checkout@v7`, `actions/setup-node@v7`, `actions/cache@v6`). The
   PMS package is cached by release version; no secrets are used.

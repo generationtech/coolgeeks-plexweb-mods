@@ -3,9 +3,9 @@
 // client runs it without the user's shell setup.
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 const root = join(import.meta.dirname, "..");
 const hook = join(root, ".githooks", "pre-commit");
@@ -21,6 +21,7 @@ function fakeBin(dir: string, label: string, version: string | null): string {
   if (version) script(join(dir, "node"), `echo ${version}`);
   script(join(dir, "npm"), `echo "${label}-npm $*" >> "$HOOK_LOG"`);
   script(join(dir, "gitleaks"), `echo "${label}-gitleaks $1" >> "$HOOK_LOG"`);
+  script(join(dir, "git"), "exit 0"); // nothing staged under local/
   return dir;
 }
 
@@ -99,5 +100,64 @@ describe(".githooks/pre-commit Node resolution", () => {
     const text = readFileSync(hook, "utf8");
     expect(text).toContain(`NODE_MIN_MAJOR=${major}\n`);
     expect(text).toContain(`NODE_MIN_MINOR=${minor}\n`);
+  });
+});
+
+/** Directory of the real git binary, for the tests that need a real repo. */
+const gitDir = (process.env.PATH ?? "").split(":").find((d) => d && existsSync(join(d, "git")))!;
+
+describe(".githooks/pre-commit local/ guard", () => {
+  function repoWith(stage: (git: (...args: string[]) => void, write: (p: string, body: string) => void) => void) {
+    const repo = mkdtempSync(join(tmpdir(), "pre-commit-local-"));
+    const log = join(repo, "..", `${repo.split("/").pop()}.log`);
+    const bin = fakeBin(join(repo, "..", `${repo.split("/").pop()}-bin`), "ok", "v22.23.4");
+    rmSync(join(bin, "git")); // the guard needs the real git here
+    const env = { HOME: repo, PATH: `${bin}:${gitDir}`, HOOK_LOG: log, GIT_CONFIG_NOSYSTEM: "1" };
+    const git = (...args: string[]) => {
+      const r = spawnSync("git", args, { cwd: repo, env, encoding: "utf8" });
+      if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
+    };
+    const write = (p: string, body: string) => {
+      mkdirSync(dirname(join(repo, p)), { recursive: true });
+      writeFileSync(join(repo, p), body);
+    };
+    git("init", "-q");
+    write(".gitignore", "/local/\n");
+    stage(git, write);
+    const res = spawnSync(hook, [], { cwd: repo, env, encoding: "utf8" });
+    const calls = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : [];
+    return { status: res.status, stderr: res.stderr, calls };
+  }
+
+  it("refuses force-added files under local/, empty ones included, before running anything else", () => {
+    const r = repoWith((git, write) => {
+      write("local/metalshop-notes.md", "notes\n");
+      write("local/tools/empty.ts", "");
+      git("add", "-f", "local/");
+    });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("refusing to commit files under local/");
+    expect(r.stderr).toContain("local/metalshop-notes.md\nlocal/tools/empty.ts\n");
+    expect(r.calls).toEqual([]);
+  });
+
+  it("allows paths that only contain 'local' elsewhere in the tree", () => {
+    const r = repoWith((git, write) => {
+      write("docs/local/notes.md", "ok\n");
+      write("test/local.test.ts", "ok\n");
+      git("add", ".");
+    });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.calls).toEqual(["ok-gitleaks git", "ok-npm run --silent lint", "ok-npm test --silent"]);
+  });
+
+  it("allows deleting a file under local/ (cleaning up a past mistake)", () => {
+    const r = repoWith((git, write) => {
+      write("local/old.md", "x\n");
+      git("add", "-f", "local/old.md");
+      git("-c", "user.name=t", "-c", "user.email=t@test.invalid", "commit", "-q", "-m", "x");
+      git("rm", "-q", "--cached", "local/old.md");
+    });
+    expect(r.status, r.stderr).toBe(0);
   });
 });

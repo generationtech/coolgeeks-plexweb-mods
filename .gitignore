@@ -6,6 +6,10 @@
 Preferences.xml
 **/Preferences.xml
 
+# --- owner-only homelab material (never public; the pre-commit hook and a
+# --- gitleaks rule also refuse it when force-added) -------------------------
+/local/
+
 # --- Plex Web bundle captures (never commit Plex's code) ---------------------
 bundle-snapshots/
 

@@ -60,12 +60,20 @@ describe(".gitignore", () => {
     "bundle-snapshots/web/index.html",
     "node_modules/x/index.js",
     "dist/plexweb-mods.js",
+    "local/metalshop-plex.md",
+    "local/metalshop-plex/plex.container",
+    "local/tools/peek.cjs",
   ])("ignores %s", (p) => {
     expect(ignored(p)).toBe(true);
   });
 
   it("keeps .env.example tracked", () => {
     expect(ignored(".env.example")).toBe(false);
+  });
+
+  it("ignores only the top-level local/, not other paths named local", () => {
+    expect(ignored("docs/local/notes.md")).toBe(false);
+    expect(ignored("test/local.test.ts")).toBe(false);
   });
 });
 

@@ -3,7 +3,7 @@
 // matches a rule. Skipped when the gitleaks binary is not on PATH.
 import { describe, expect, it } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -62,5 +62,25 @@ describe.skipIf(!hasGitleaks)("gitleaks custom rules", () => {
       "versions.txt": "release 1.2.3.4 and 8.30.1\n",
     });
     expect(findings).toEqual([]);
+  });
+});
+
+describe.skipIf(!hasGitleaks)("gitleaks local-dir rule", () => {
+  it("flags staged files under the top-level local/ only, as the pre-commit scan sees them", () => {
+    const repo = mkdtempSync(join(tmpdir(), "gitleaks-local-"));
+    const git = (...args: string[]) => execFileSync("git", args, { cwd: repo, env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1" } });
+    git("init", "-q");
+    for (const p of ["local/tools/peek.ts", "docs/local/notes.md"]) {
+      mkdirSync(join(repo, p, ".."), { recursive: true });
+      writeFileSync(join(repo, p), "harmless\n");
+    }
+    git("add", "-f", ".");
+    const out = execFileSync(
+      "gitleaks",
+      ["git", "--pre-commit", "--staged", "-c", join(root, ".gitleaks.toml"), "--no-banner", "--report-format", "json", "--report-path", "-", "--exit-code", "0", "--log-level", "error", "."],
+      { cwd: repo, encoding: "utf8" },
+    );
+    const findings = (JSON.parse(out) as Finding[]).map((f) => `${f.RuleID} ${f.File}`);
+    expect(findings).toEqual(["local-dir local/tools/peek.ts"]);
   });
 });

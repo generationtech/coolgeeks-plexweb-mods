@@ -56,6 +56,15 @@ keywords = ["10.", "192.168.", "172."]
   regexTarget = "match"
   regexes = ['''/\d{1,2}$''']
 
+# Owner-only homelab material lives in the gitignored local/ directory. Any
+# file there is a finding, so a force-add (git add -f) that slipped past the
+# pre-commit hook still fails CI's full-history scan. (The hook also catches
+# empty files, which gitleaks cannot: it scans added lines only.)
+[[rules]]
+id = "local-dir"
+description = "file under the owner-only local/ directory"
+path = '''^local/'''
+
 [[allowlists]]
 description = "lockfiles and license"
 paths = ['''(^|/)package-lock\.json$''', '''(^|/)LICENSE$''']

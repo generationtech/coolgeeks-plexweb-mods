@@ -17,6 +17,10 @@ every PMS update. Read this file fully before changing anything.
    The **only** Plex-derived content allowed is short anchor strings: a few
    words, localization keys, API paths (e.g. `"Play Next"`, `/playQueues`).
    Captured Plex Web bundles live only in the gitignored `bundle-snapshots/`.
+   Owner- and homelab-specific material (server notes, copies of container
+   definitions, research helpers that print bundle code) lives only in the
+   gitignored `local/`. The pre-commit hook and a gitleaks rule refuse any
+   path under `local/`, even when force-added.
 2. **All configuration comes from environment variables.** Only
    `.env.example` (placeholders only) is committed. Real values go in a local
    `.env`, which is gitignored. Tests and fixtures use obvious placeholders
@@ -87,3 +91,5 @@ downloads are blocked, `go install github.com/zricethezav/gitleaks/v8@v8.30.1`.
 - `test/` — unit tests with synthetic fake webpack bundles; `e2e/` —
   Playwright tests against a real server (skipped without `PLEX_URL`).
 - `docs/` — research notes (anchor strings only, never code excerpts).
+- `local/` — gitignored, owner-only (homelab notes, local tools). Never
+  committed; write real hostnames, paths and image names here or in `.env`.

@@ -2,6 +2,17 @@
 # Repo rule: run gitleaks and the test suite before every commit; never commit red.
 set -eu
 
+# Owner-only homelab material lives in the gitignored local/ directory. Refuse
+# it even when force-added (git add -f), empty files included. Deleting a
+# path there is allowed. (.gitleaks.toml has a matching rule for CI scans.)
+local_paths=$(git diff --cached --name-only --diff-filter=d -- local/)
+if [ -n "$local_paths" ]; then
+  echo "pre-commit: refusing to commit files under local/ (owner-only, never public):" >&2
+  printf '%s\n' "$local_paths" >&2
+  echo "pre-commit: unstage them with: git restore --staged local/" >&2
+  exit 1
+fi
+
 # Minimum Node, same as "engines" in package.json (a unit test keeps them equal).
 NODE_MIN_MAJOR=22
 NODE_MIN_MINOR=12
