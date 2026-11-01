@@ -37,6 +37,10 @@ Conventions:
 - Record results in `docs/anchor-research.md` (findings log) using
   placeholders for ids, hostnames and library names. Anchor strings only.
 - Order: B0 → B1 → B2 → B3 → B4 → B5. B6–B11 are optional.
+- **Merge plan (owner, 2026-11-01):** after B5 passes, the owner
+  squash-merges `claude/plex-play-from-here-rzg61g` into `main` and deletes
+  the branch. No history rewrite before that; sessions keep pushing to the
+  branch (never force-push).
 
 ---
 
@@ -163,9 +167,12 @@ npx playwright install chromium        # once; add --with-deps (sudo) if Chromiu
 npm run build && npx playwright test
 ```
 
-Get the token from a signed-in Plex Web (DevTools > Network: the
-`X-Plex-Token` of any request), into `.env` only. Set `PLEX_SECTION_ID` to
-a movie library id. Expected: **4 passed** (grid, Detail View, Table View,
+Get the token from a signed-in Plex Web (open any item, "..." > Get Info >
+View XML: the opened URL ends in `X-Plex-Token=<token>`; or DevTools >
+Network, any request to the server), into `.env` only, never into a chat
+or a shell history: `read -rs T && sed -i "s/^PLEX_TOKEN=.*/PLEX_TOKEN=$T/" .env && unset T`.
+It is your account's token: treat it like a password (signing out all
+devices on plex.tv revokes it). Set `PLEX_SECTION_ID` to a movie library id. Expected: **4 passed** (grid, Detail View, Table View,
 and the companion check), the rest skipped unless you set
 `PLEX_E2E_TV_SECTION_ID`, `PLEX_E2E_OTHER_SECTION_ID`,
 `PLEX_E2E_BIG_SECTION_ID` (a library with 100+ items). The companion test
@@ -181,7 +188,13 @@ verified. Set `PLEX_E2E_SORT_LABEL` to a sort your library offers (default
 `Year`). Debug with `PW_TRACE=1` (traces and screenshots can contain the
 token and library names: keep them local, they are gitignored). The tests
 start real playback: it shows up in PMS's log like any playback by your
-account.
+account, and an item played for a few seconds may get a resume point
+("Continue Watching"; remove it from the item's "..." menu). **Leave
+`PLEX_E2E_BIG_SECTION_ID` unset on a real server:** its autoplay test waits
+for Plex to play about a dozen items through by itself, which only works
+with the sandbox's 2-second clips. Before pasting output anywhere, redact
+the token, the plex.direct hash and 40-hex ids:
+`sed -E "s/[0-9a-f]{32}\.plex\.direct/<hash>.plex.direct/g; s/\b[0-9a-f]{40}\b/<id40>/g; s/${PLEX_TOKEN:-no-token-set}/<token>/g"`.
 
 ## B5. First real deploy: the derived image
 
@@ -191,7 +204,16 @@ account.
    ssh "$PLEX_SSH" "podman pull -q docker.io/library/node:22-bookworm-slim >/dev/null && podman image inspect --format '{{.Digest}}' docker.io/library/node:22-bookworm-slim"
    ```
 
-   Put `NODE_IMAGE=docker.io/library/node@<that digest>` in `.env`.
+   Put `NODE_IMAGE=docker.io/library/node@<that digest>` in `.env`. The
+   same value without touching the host, from the workstation (Docker Hub's
+   public registry API; prints the linux/amd64 image of the tag's index):
+
+   ```sh
+   T=$(curl -fsS "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/node:pull" | node -pe 'JSON.parse(require("fs").readFileSync(0)).token')
+   curl -fsS -H "Authorization: Bearer $T" -H 'Accept: application/vnd.oci.image.index.v1+json' \
+     https://registry-1.docker.io/v2/library/node/manifests/22-bookworm-slim \
+     | node -pe 'JSON.parse(require("fs").readFileSync(0)).manifests.find(m=>m.platform.os==="linux"&&m.platform.architecture==="amd64").digest'
+   ```
 
 2. Stage the build context on the host:
 
@@ -203,19 +225,28 @@ account.
    ```
 
    Expected: only the VERSION line (`<mods version> runtime=<12 hex>`).
+   Build from a clean, pushed commit: `cat dist/image/REVISION` must be a
+   40-hex SHA without `-dirty`.
 
 3. Build. This starts nothing and leaves `$PLEX_IMAGE` untouched:
 
    ```sh
    ssh "$PLEX_SSH" "cd '$PLEX_MODS_BUILD_DIR' && ./build-image.sh --plex-image '$PLEX_IMAGE' --node-image '$NODE_IMAGE' --tag '$PLEX_MODS_IMAGE'"
-   ssh "$PLEX_SSH" "podman image inspect --format '{{index .Labels \"io.github.generationtech.plexweb-mods.version\"}}' '$PLEX_MODS_IMAGE'"
+   ssh "$PLEX_SSH" "podman image inspect --format '{{json .Labels}}' '$PLEX_MODS_IMAGE'"
+   ssh "$PLEX_SSH" "podman image inspect --format '{{.Digest}}' '$PLEX_IMAGE'"
    ```
 
    Expected: the anchor report with `RESULT: all required anchors
    resolved`, `plexweb-mods: image layer (sha256):` listing exactly
-   `index.html` and `plexweb-mods.js`, `build-image: built <tag>`, and a
-   label equal to `dist/image/VERSION`. If it says `preflight failed`,
-   nothing changed: go to B3.
+   `index.html` and `plexweb-mods.js`, `build-image: built <tag>`. The
+   labels: `org.opencontainers.image.revision` = `dist/image/REVISION`,
+   `org.opencontainers.image.base.name` = `$PLEX_IMAGE`,
+   `org.opencontainers.image.base.digest` = the digest the last command
+   prints, and `io.github.generationtech.plexweb-mods.version` =
+   `dist/image/VERSION`. Record the mods image's own digest
+   (`podman image inspect --format '{{.Digest}}' '$PLEX_MODS_IMAGE'`) where
+   you record deployments. If it says `preflight failed`, nothing changed:
+   go to B3.
 
 4. Switch the unit to the derived image. In the unit's source of truth,
    change **only** the image reference from `$PLEX_IMAGE` to
