@@ -6,208 +6,267 @@ so a future session (or the owner) can run it without asking questions.
 
 Already done without the homelab (see `docs/anchor-research.md`): anchor
 research on Plex Web 4.162.1 (PMS 1.43.5 package) and 4.163.0
-(app.plex.tv); both native-player paths (primary and fallback); the
+(app.plex.tv); an offline preflight of Plex Web 4.160.0 (PMS 1.43.4.10903
+package): green; both native-player paths (primary and fallback); the
 playQueue curl test. The e2e suite is green against a throwaway unclaimed
 PMS (`scripts/sandbox-pms.sh`), locally and in CI on every push. It covers
 grid, Detail/Table View, TV season, Other Videos, 300-item windowing with
 Next/Previous and with unpaused autoplay, and a check that the companion
-fallback cannot reach Plex Web (only a claimed server is left to try; see
-B5).
+fallback cannot reach Plex Web (only a claimed server is left to try, B4).
+The derived image (`image/`) is built for real by CI with podman against
+synthetic Plex bases (`scripts/ci/image-smoke.sh`).
+
+**The target setup** for B1–B6: Plex Media Server in a hardened container
+run by a systemd unit on a separate container host: rootful Podman,
+**read-only root filesystem**, `--rm` (a fresh container from the image on
+every start), image built locally from the official PMS `.deb`, clients
+connecting straight to PMS on :32400 over HTTPS (`*.plex.direct`, "Secure
+connections: Required"), no reverse proxy. Such a container can't be
+changed in place (the injector refuses it), so the mods ship as a
+**derived image** (`image/`). Other installs: see the notes in B1.
 
 Conventions:
 
-- Run from the repo root on a machine that can reach the server (for
-  Docker installs, the Docker host). `$VARS` come from your local `.env`
-  (copy `.env.example`; never commit `.env`).
-- Load the env into your shell first: `set -a; . ./.env; set +a`
+- Run everything from the repo root on your **workstation**. Commands for
+  the container host go through `ssh "$PLEX_SSH"` (the user that owns the
+  Plex image; root for a rootful unit). Nothing needs Node on that host.
+- `$VARS` come from your local `.env` (copy `.env.example`; never commit
+  `.env`). Load it into your shell first: `set -a; . ./.env; set +a`
+- Owner-specific notes (real hostnames, paths, image names) belong in the
+  gitignored `local/`, never in this file.
 - Record results in `docs/anchor-research.md` (findings log) using
   placeholders for ids, hostnames and library names. Anchor strings only.
 - Order: B0 → B1 → B2 → B3 → B4 → B5. B6–B10 are optional.
 
 ---
 
-## B0. One-time setup on the machine that runs the tools
+## B0. One-time setup on the workstation
 
 ```sh
 git clone https://github.com/generationtech/coolgeeks-plexweb-mods && cd coolgeeks-plexweb-mods
 git checkout claude/plex-play-from-here-rzg61g   # until it is merged
-node --version          # expect v22.12 or newer
-npm ci                  # also installs the pre-commit hook
+node --version          # expect v22.12 or newer (nvm is fine)
+./scripts/ci/install-gitleaks.sh ~/.local/bin && gitleaks version   # if gitleaks is missing; expect 8.30.1
+npm ci                  # also installs the pre-commit hook (gitleaks, lint, tests)
 npm test                # expect: all tests pass, 0 failed
-npm run build           # expect: dist/plexweb-mods.js, dist/injector.cjs, dist/preflight.cjs, dist/fetch-plex-web.cjs
-cp .env.example .env    # then fill in PLEX_URL, PLEX_TOKEN, PLEX_SECTION_ID, PLEX_INSTALL_TYPE
+npm run build           # expect: dist/plexweb-mods.js, dist/injector.cjs, dist/preflight.cjs, dist/fetch-plex-web.cjs, dist/image/
+cp .env.example .env    # then fill in as B1–B5 describe
+git check-ignore -v .env local/x    # expect both ignored
 ```
 
-Expected: the build succeeds, `.env` exists, and `git status` does not list
-`.env` (it is ignored). Optional rehearsal with no server and no account:
-`scripts/sandbox-pms.sh start`, then follow B5 against the env it prints.
+Expected: the build succeeds, and `git status` lists neither `.env` nor
+`local/`. The hook loads `~/.nvm/nvm.sh` itself when a GUI git client runs
+it without Node 22 on PATH, and refuses any file under `local/`, even
+force-added. Optional rehearsal with no server and no account:
+`scripts/sandbox-pms.sh start`, then B4 against the env it prints.
 
-## B1. Identify the install type and the Plex Web path
+## B1. Look at the Plex container (read-only)
 
-The PMS 1.43.5 package puts Plex Web at
-`/usr/lib/plexmediaserver/Resources/Plug-ins-<build>/WebClient.bundle/Contents/Resources`;
-the injector auto-discovers it. To confirm:
-
-Linux package install:
+On the container host (through ssh), then over HTTP from the workstation:
 
 ```sh
-dpkg -s plexmediaserver 2>/dev/null | grep -i '^version' || rpm -q plexmediaserver
-sudo find /usr/lib/plexmediaserver -path '*WebClient.bundle/Contents/Resources/index.html'
+ssh "$PLEX_SSH" "podman ps --format '{{.Names}}  {{.Image}}'"
+ssh "$PLEX_SSH" "podman inspect --format 'image={{.ImageName}} readonly={{.HostConfig.ReadonlyRootfs}} rm={{.HostConfig.AutoRemove}} user={{.Config.User}}' <container>"
+ssh "$PLEX_SSH" "podman exec <container> find /usr/lib/plexmediaserver -path '*WebClient.bundle/Contents/Resources/index.html'"
+ssh "$PLEX_SSH" "systemctl cat '$PLEX_UNIT' | grep -n -E 'podman run|--read-only|--rm|image|localhost/'"
 ```
 
-Docker install:
+Expected: one container; `readonly=true rm=true`; exactly one path,
+`/usr/lib/plexmediaserver/Resources/Plug-ins-<build>/WebClient.bundle/Contents/Resources/index.html`;
+the unit's `podman run` line ends with the image reference. Put the
+`image=` value in `.env` as `PLEX_IMAGE`, the unit name as `PLEX_UNIT`,
+and choose `PLEX_MODS_IMAGE` (same name plus `-mods`, same tag) and
+`PLEX_MODS_BUILD_DIR` (any root-only directory outside your Plex data).
+
+`PLEX_URL`: with "Secure connections: Required" it must be the server's
+`https://<ip-with-dashes>.<server-hash>.plex.direct:32400` name. The
+`<server-hash>` is in the certificate PMS presents:
 
 ```sh
-docker ps --format '{{.Names}}\t{{.Image}}' | grep -i plex
-docker exec <container> find /usr/lib/plexmediaserver -path '*WebClient.bundle/Contents/Resources/index.html'
+openssl s_client -connect <plex-ip>:32400 </dev/null 2>/dev/null | openssl x509 -noout -ext subjectAltName
+# DNS:*.<server-hash>.plex.direct  ->  PLEX_URL=https://<a-b-c-d>.<server-hash>.plex.direct:32400
+curl -sI "$PLEX_URL/web/index.html" | grep -i -E '^(HTTP|content-security-policy|cache-control)'
 ```
 
-Expected: exactly one path. Put `PLEX_INSTALL_TYPE=linux|docker` and, for
-Docker, `PLEX_DOCKER_CONTAINER=<name>` in `.env`. Set `PLEX_WEB_DIR` only if
-auto-discovery fails. Then:
+Expected: `HTTP/1.1 200 OK`, `Cache-Control: no-cache`, and **no**
+`Content-Security-Policy` line. If a proxy or PMS ever adds one, the
+runtime needs `script-src 'self' 'unsafe-eval'` (no inline script). The
+`*.plex.direct` name must resolve on your LAN (a DNS rebinding exception
+for `plex.direct`); gitleaks blocks these names in commits, so keep them
+in `.env`.
 
-```sh
-./injector/reapply.sh --status      # Linux may need: sudo env "PATH=$PATH" ./injector/reapply.sh --status
-```
+Other installs: a **writable** container (`readonly=false`, no `--rm`)
+can use the injector in place (`PLEX_INSTALL_TYPE=podman` or `docker`,
+`PLEX_CONTAINER=<name>`, run on the container host with Node 22). A Linux
+**package** install uses `PLEX_INSTALL_TYPE=linux` on the server
+(`sudo env "PATH=$PATH" ./injector/reapply.sh --status`, expect
+`index.html: pristine`). The rest of this file follows the read-only
+container.
 
-Expected: `discovered Plex Web at ...`, `index.html: pristine (not injected)`.
-Docker note: recreating the container (image update) restores the original
-files, so the injection must be re-applied (B6).
-
-## B2. Update your server to PMS 1.43.5 or later (before B3)
-
-The mod is verified against Plex Web 4.162.1, the copy bundled with PMS
-1.43.5.11079 (and preflighted against 4.163.0 from app.plex.tv). Older
-servers ship older Plex Web builds that may lack the anchored actions, so
-update first; newer is fine (the weekly canary, B8, watches new releases).
+## B2. PMS version: is an update needed first?
 
 ```sh
 curl -s -H 'Accept: application/json' "$PLEX_URL/identity" | node -pe 'JSON.parse(require("fs").readFileSync(0)).MediaContainer.version'
 ```
 
-Expected after updating: `1.43.5.11079-b3b13e506` or a later version.
+Expected: `1.43.4.10903-e5521bd8c` or later. Preflight is green (offline)
+on the Plex Web bundled with 1.43.4.10903 (4.160.0) and 1.43.5.11079
+(4.162.1); the mod is live-verified on 4.162.1 only. Older than 1.43.4:
+update first. Otherwise no update is needed to try it; B4 proves it live.
+For an image built from a pinned `.deb`, updating means: new pins, rebuild
+the Plex image, then rebuild the mods image (B6).
 
-- Linux package: install the current release from plex.tv's download page
-  (or your distro repo), e.g. `sudo apt-get update && sudo apt-get install plexmediaserver`,
-  then `systemctl is-active plexmediaserver` (expect `active`).
-- Docker: pull the image tag that carries 1.43.5 or later and recreate the
-  container (the official image can also update itself on start when
-  configured to); re-check the version with the command above.
+## B3. Preflight your exact Plex Web, offline
 
-Updating PMS replaces Plex Web, so anything applied before must be applied
-again (B5, then B6 to automate it).
-
-## B3. Your server's Plex Web version, preflighted
+Put the package version and SHA-1 your image is built from into `.env`
+(`PLEX_VERSION`, `PLEX_DEB_SHA1`; plex.tv publishes the SHA-1), then:
 
 ```sh
-./injector/reapply.sh --snapshot          # -> bundle-snapshots/<type>-<timestamp>/ (gitignored)
-SNAP=$(ls -d bundle-snapshots/*/ | tail -1)
-ls "$SNAP"/js | grep -o 'plex-[0-9.]*-[0-9a-f]*' | sort -u   # Plex Web version
-node dist/preflight.cjs --bundle-dir "$SNAP"
+D="bundle-snapshots/pms-$PLEX_VERSION"     # gitignored
+mkdir -p "$D" && curl -fsS --proto '=https' -o "$D/pms.deb" \
+  "https://downloads.plex.tv/plex-media-server-new/$PLEX_VERSION/debian/plexmediaserver_${PLEX_VERSION}_amd64.deb"
+echo "$PLEX_DEB_SHA1  $D/pms.deb" | sha1sum -c -
+mkdir "$D/root" && dpkg-deb -x "$D/pms.deb" "$D/root"
+W=$(dirname "$(find "$D/root" -path '*WebClient.bundle/Contents/Resources/index.html')")
+ls "$W/js" | grep -o 'plex-[0-9.]*-[0-9a-f]*' | sort -u     # Plex Web version
+node dist/preflight.cjs --bundle-dir "$W"
 ```
 
-Expected: `chunk globals: webpackChunkplex_web_client`,
-`group play-from-here/player: active = play-from-here/native-player; standby = play-from-here/native-player-fallback`,
-and `RESULT: all required anchors resolved`. After B2 your Plex Web should be
-4.162.1 or newer; if it is not 4.162.1 or 4.163.0, note it in the research
-doc's findings log (the weekly canary, B8, checks new releases too). If preflight fails, the
-report names the anchor and why. Fix `patches/play-from-here/plex-anchors.ts`
-following the method in `docs/anchor-research.md` (`--find` lists module
-ids, never code). The most likely casualty of a Plex Web update is
-`bundle.startExistingPlayQueueAction` (an action nothing dispatches in
-4.162.1). If only it breaks, the group line shows the fallback
-(`queuePlayback`) as active and playback keeps working; fix the primary at
-leisure.
+Expected: `pms.deb: OK`, one Plex Web version, `chunk globals:
+webpackChunkplex_web_client`, `group play-from-here/player: active =
+play-from-here/native-player; standby = play-from-here/native-player-fallback`
+and `RESULT: all required anchors resolved`. Done for 1.43.4.10903
+(4.160.0) on 2026-11-01. For an image not built from the `.deb`, snapshot
+it instead (read-only, throwaway container, no network):
+`mkdir -p bundle-snapshots/image && ssh "$PLEX_SSH" "podman run --rm --network none --entrypoint tar '$PLEX_IMAGE' -C <web dir from B1> -cf - ." | tar -xf - -C bundle-snapshots/image`,
+then the same `node dist/preflight.cjs --bundle-dir bundle-snapshots/image`.
+If preflight fails, the report names the anchor and why. Fix
+`patches/play-from-here/plex-anchors.ts` following the method in
+`docs/anchor-research.md` (`--find` lists module ids, never code). If only
+the primary player anchor breaks, the group line shows the fallback as
+active and playback keeps working.
 
-## B4. E2E auth on your (claimed) server
+## B4. Live e2e against your server, server untouched (token auth)
 
-The sandbox server was unclaimed and needed no token. A claimed server
-does, so the e2e injects `PLEX_TOKEN` into browser storage
-(`e2e/auth.ts`, key `myPlexAccessToken`). That storage key is the one
-remaining unverified e2e assumption.
+Route mode injects the local build into the test browser by request
+interception: this proves the mod live on your Plex Web without changing
+the server. A claimed server needs a token, which the e2e puts into
+browser storage (`e2e/auth.ts`, key `myPlexAccessToken`, the one remaining
+unverified e2e assumption).
 
 ```sh
 curl -s -o /dev/null -w '%{http_code}\n' -H "X-Plex-Token: $PLEX_TOKEN" "$PLEX_URL/library/sections"   # expect 200
-npx playwright install chromium        # on the machine running e2e
-npm run build && npx playwright test   # route mode: injects the local build via interception; server untouched
+curl -s -H 'Accept: application/json' -H "X-Plex-Token: $PLEX_TOKEN" "$PLEX_URL/library/sections" \
+  | node -pe 'JSON.parse(require("fs").readFileSync(0)).MediaContainer.Directory.map(d=>d.key+" "+d.type).join("\n")'   # ids + types, for .env
+npx playwright install chromium        # once; add --with-deps (sudo) if Chromium lacks system libraries
+npm run build && npx playwright test
 ```
 
 Get the token from a signed-in Plex Web (DevTools > Network: the
-`X-Plex-Token` of any request), into `.env` only. Expected: the grid and
-Detail/Table View tests pass (`3 passed`); the TV, Other Videos and 300-item
-tests skip unless you set `PLEX_E2E_TV_SECTION_ID`, `PLEX_E2E_OTHER_SECTION_ID`,
-`PLEX_E2E_BIG_SECTION_ID` (a library with 100+ items) in `.env`. If the run
-shows a sign-in screen, find the key(s) holding the token in a signed-in
-browser (DevTools > Application > Local Storage for `$PLEX_URL`), put them
-in `TOKEN_STORAGE_KEYS` in `e2e/auth.ts`, and promote the note there to
+`X-Plex-Token` of any request), into `.env` only. Set `PLEX_SECTION_ID` to
+a movie library id. Expected: **4 passed** (grid, Detail View, Table View,
+and the companion check), the rest skipped unless you set
+`PLEX_E2E_TV_SECTION_ID`, `PLEX_E2E_OTHER_SECTION_ID`,
+`PLEX_E2E_BIG_SECTION_ID` (a library with 100+ items). The companion test
+answers the last open question on a claimed server: it expects PMS to
+answer 404 to `playMedia` aimed at Plex Web. If it passes, also remove the
+companion path (or default `pfh-companion` to `off`) and note it in
+`docs/anchor-research.md`; if it fails because playback *started*, promote
+`api.companionPlayMedia` to verified with the versions. If the run shows a
+sign-in screen, find the key(s) holding the token in a signed-in browser
+(DevTools > Application > Local Storage for `$PLEX_URL`), put them in
+`TOKEN_STORAGE_KEYS` in `e2e/auth.ts`, and promote the note there to
 verified. Set `PLEX_E2E_SORT_LABEL` to a sort your library offers (default
 `Year`). Debug with `PW_TRACE=1` (traces and screenshots can contain the
-token and library names: keep them local, they are gitignored).
+token and library names: keep them local, they are gitignored). The tests
+start real playback: it shows up in PMS's log like any playback by your
+account.
 
-## B5. First real apply, then e2e against it
+## B5. First real deploy: the derived image
 
-```sh
-npm run build
-./injector/reapply.sh --dry-run        # preflight report + a one-line diff of index.html; nothing written
-./injector/reapply.sh                  # Linux may need: sudo env "PATH=$PATH" ./injector/reapply.sh
-./injector/reapply.sh --verify         # needs PLEX_URL; fetches index.html and the runtime over HTTP
-```
+1. Pin the Node image for the throwaway build stage (once, on the host):
 
-Expected: exit 0, `group play-from-here/player: active = play-from-here/native-player; ...`,
-`verified: index.html references plexweb-mods.js?v=<hash>`,
-`HTTP verify: index.html served with the new tag (Cache-Control: no-cache)`,
-and `HTTP verify: runtime served and matches the build`. In the browser:
-hard-reload once (Ctrl+Shift+R), open a library's **Library** tab, sort it,
-open an item's "..." menu, and you should see "Play from here" under
-"Play Next" (also on a TV season page). In the DevTools console:
+   ```sh
+   ssh "$PLEX_SSH" "podman pull -q docker.io/library/node:22-bookworm-slim >/dev/null && podman image inspect --format '{{.Digest}}' docker.io/library/node:22-bookworm-slim"
+   ```
 
-```js
-document.documentElement.dataset.plexwebModsStatus           // expect "ok"
-__plexwebMods.plugins["play-from-here"].activePath()        // expect { path: "native" }
-__plexwebMods.printReport({ final: true })
-```
+   Put `NODE_IMAGE=docker.io/library/node@<that digest>` in `.env`.
 
-Then the e2e against the applied install:
+2. Stage the build context on the host:
 
-```sh
-PLEX_E2E_INJECT=server npx playwright test   # expect: the same passes as in B4
-```
+   ```sh
+   npm run build
+   ssh "$PLEX_SSH" "install -d -m 0750 '$PLEX_MODS_BUILD_DIR'"
+   rsync -rlpt --delete dist/image/ "$PLEX_SSH:$PLEX_MODS_BUILD_DIR/"
+   ssh "$PLEX_SSH" "cd '$PLEX_MODS_BUILD_DIR' && sha256sum -c --quiet SHA256SUMS && cat VERSION"
+   ```
 
-Optional: prove the fallback on your install too:
-`./injector/reapply.sh --opt pfh-player=fallback`, rerun the e2e (it then
-expects the `native-fallback` path), then `./injector/reapply.sh` again to
-go back to auto.
+   Expected: only the VERSION line (`<mods version> runtime=<12 hex>`).
 
-Companion check (home checklist). The companion `playMedia` fallback could
-not work in the unclaimed sandbox. PMS answered 404, its `/clients` list
-stayed empty while Plex Web was open, and Plex Web 4.162.1 only *sends*
-`/player/*` commands; it never declares itself a player. A claimed server
-is the one setup not tried yet, so confirm there:
+3. Build. This starts nothing and leaves `$PLEX_IMAGE` untouched:
 
-```sh
-# with Plex Web open and signed in, in some browser:
-curl -s -H 'Accept: application/json' -H "X-Plex-Token: $PLEX_TOKEN" "$PLEX_URL/clients"   # expect: no "Plex Web" entry
-./injector/reapply.sh --opt pfh-player=companion
-# hard-reload, sort a library, "Play from here" on any item
-```
+   ```sh
+   ssh "$PLEX_SSH" "cd '$PLEX_MODS_BUILD_DIR' && ./build-image.sh --plex-image '$PLEX_IMAGE' --node-image '$NODE_IMAGE' --tag '$PLEX_MODS_IMAGE'"
+   ssh "$PLEX_SSH" "podman image inspect --format '{{index .Labels \"io.github.generationtech.plexweb-mods.version\"}}' '$PLEX_MODS_IMAGE'"
+   ```
 
-Expected: a toast `companion fallback failed with HTTP 404: PMS has no
-remote-control player ...` and no playback. Record the result in
-`docs/anchor-research.md`. If it is 404 too, remove the companion path
-(or default `pfh-companion` to `off`). Then `./injector/reapply.sh` to go
-back to auto. If it unexpectedly plays, promote `api.companionPlayMedia`
-to verified with the PMS/Plex Web versions.
+   Expected: the anchor report with `RESULT: all required anchors
+   resolved`, `plexweb-mods: image layer (sha256):` listing exactly
+   `index.html` and `plexweb-mods.js`, `build-image: built <tag>`, and a
+   label equal to `dist/image/VERSION`. If it says `preflight failed`,
+   nothing changed: go to B3.
 
-Rollback at any time: `./injector/reapply.sh --uninstall` (restores
-index.html byte for byte, removes the runtime file and the backup).
+4. Switch the unit to the derived image. In the unit's source of truth,
+   change **only** the image reference from `$PLEX_IMAGE` to
+   `$PLEX_MODS_IMAGE` (every other flag stays: read-only, user, caps,
+   mounts), deploy it the way you deploy that unit, then:
 
-## B6. (optional) Re-apply automatically after PMS updates
+   ```sh
+   ssh "$PLEX_SSH" "systemctl cat '$PLEX_UNIT' | grep -c '$PLEX_MODS_IMAGE'"   # expect 1
+   ssh "$PLEX_SSH" "systemctl daemon-reload && systemctl restart '$PLEX_UNIT' && sleep 15 && systemctl is-active '$PLEX_UNIT'"
+   ```
 
-Re-running is safe: reapply is idempotent and, after an update, refuses to
-patch if preflight fails (Plex stays untouched; exit 3).
+   Expected: `1`, then `active`. **Rollback:** put `$PLEX_IMAGE` back,
+   `daemon-reload`, restart.
 
-Linux (systemd path unit; the reapply's own write triggers one extra run,
-which is a no-op):
+5. Verify from the workstation:
+
+   ```sh
+   ./injector/reapply.sh --verify-served
+   PLEX_E2E_INJECT=server npx playwright test
+   ```
+
+   Expected: `HTTP verify: index.html served with the new tag
+   (Cache-Control: no-cache)`, `HTTP verify: runtime served and matches the
+   build`, `the served Plex Web carries this build`; the e2e gives the same
+   passes as B4 minus the companion test (route mode only). In a browser:
+   hard-reload once (Ctrl+Shift+R), open a library's **Library** tab, sort
+   it, open an item's "..." menu: "Play from here" sits under "Play Next"
+   (also on a TV season page). In the DevTools console:
+
+   ```js
+   document.documentElement.dataset.plexwebModsStatus           // expect "ok"
+   __plexwebMods.plugins["play-from-here"].activePath()        // expect { path: "native" }
+   __plexwebMods.printReport({ final: true })
+   ```
+
+Optional: prove the fallback player on your Plex Web without a rebuild:
+`PLEX_E2E_PLAYER=fallback npx playwright test` (route mode).
+
+## B6. (optional) After every Plex update: rebuild the mods image
+
+The mods live in the image, so a Plex update means: build the new Plex
+image as usual, then B3 for the new version (optional: the build runs the
+same preflight), then B5 steps 2–5 with the new `PLEX_IMAGE` and
+`PLEX_MODS_IMAGE` tags in `.env`. If the mods build fails on preflight,
+nothing changed; choose between running the new plain Plex image (mods
+off until the anchors are fixed) and staying on the old mods image (old
+PMS). Keep the previous plain and mods images until the new one has run
+for a while (rollback).
+
+Linux package installs instead re-apply in place after each PMS update
+(idempotent; refuses if preflight fails, exit 3, Plex untouched), e.g. a
+systemd path unit; the reapply's own write triggers one extra, no-op run:
 
 ```ini
 # /etc/systemd/system/plexweb-mods.service
@@ -229,13 +288,15 @@ sudo systemctl daemon-reload && sudo systemctl enable --now plexweb-mods.path
 journalctl -u plexweb-mods.service -n 50    # after the next PMS update: expect "applied" or "already applied"
 ```
 
-Docker: run `./injector/reapply.sh` after every container (re)start, e.g. a
-cron entry `*/15 * * * * cd /path/to/repo && ./injector/reapply.sh >> ~/plexweb-mods.log 2>&1`.
+A writable Docker/Podman container: run `./injector/reapply.sh` after every
+container (re)start.
 
 ## B7. (optional) Docker: confirm the injector path inside the official image
 
 The injector's Docker mode is tested against an emulated container only.
-With a Docker install, B1 and B5 exercise it for real; if
+With a writable Docker install of the official image, B1's checks (with
+`docker` for `podman`) and an in-place `./injector/reapply.sh --status`
+(`PLEX_INSTALL_TYPE=docker`) exercise it for real; if
 `docker exec <container> find /usr/lib/plexmediaserver -path '*WebClient.bundle/Contents/Resources/index.html'`
 prints nothing, set `PLEX_WEB_DIR` and add the path to `DEFAULT_SEARCH_ROOTS`
 in `injector/target-fs.ts` (with a test).

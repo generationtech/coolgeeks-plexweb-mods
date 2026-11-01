@@ -167,11 +167,21 @@ Node 24 actions, with no Node 20 deprecation warning.
   stays empty. The bundle shows why: Plex Web 4.162.1 only *sends* remote-control
   commands (it's a controller) and never declares itself a player. The
   path stays as a last resort with an accurate error message. Whether a
-  *claimed* server changes anything is the one open question (BACKLOG B5
-  home checklist).
+  *claimed* server changes anything is the one open question (BACKLOG B4:
+  the companion e2e test against a claimed server).
 - **Anchors:** every Plex-coupled anchor in `plex-anchors.ts` is verified
-  except the companion one. Preflight is green on 4.162.1 and on the
-  initial chunks of 4.163.0 from app.plex.tv. See `docs/anchor-research.md`.
+  except the companion one. Preflight is green on 4.160.0 (the PMS
+  1.43.4.10903 package, checked offline), 4.162.1, and the initial chunks of
+  4.163.0 from app.plex.tv. Live runs so far used 4.162.1 only. See
+  `docs/anchor-research.md`.
+- **Container installs:** the injector works in place in writable Docker or
+  Podman containers. It refuses read-only ones up front, pointing to the
+  **derived image** (`image/`): your Plex image plus one layer with
+  `index.html` and the runtime, built by a throwaway Node stage whose
+  preflight fails the build on a broken anchor. The patch stage was run
+  locally against the real Plex Web 4.160.0 (layer = the two files;
+  `index.html` = original + one line). `--verify-served` checks a deployed
+  image over HTTP from the workstation.
 - **PMS API:** a sorted section or season `uri` plus `key` yields the visible
   order from the clicked item on; filters are honoured. Plex Web's own
   library Play button sends the same `uri` without `key`.
@@ -182,17 +192,18 @@ Node 24 actions, with no Node 20 deprecation warning.
 
 **Not verified yet (needs the owner's server, see BACKLOG.md):**
 
-- the install path on the real server (B1);
-- updating it to PMS 1.43.5 or later (B2), then its Plex Web version and
-  preflight (B3);
-- e2e auth with a token on a *claimed* server (the storage key in
-  `e2e/auth.ts`, B4);
-- the first real apply, including the companion check (B5).
+- the container host checks, the `*.plex.direct` URL and the absence of a
+  CSP header (B1);
+- a live e2e on a *claimed* server with a token, server untouched: the
+  token storage key in `e2e/auth.ts`, the runtime on Plex Web 4.160.0, and
+  the companion check (B4);
+- the derived image built from a real Plex image and deployed (B5).
 
 The weekly breakage canary (B8) is designed but not built.
 
-**Next:** BACKLOG.md B1 → B2 → B3 → B4 → B5. Optional: B6 (auto-reapply
-after PMS updates), B8 (weekly canary).
+**Next:** BACKLOG.md B1 → B2 → B4 → B5 (B3 is already done offline for
+PMS 1.43.4.10903). Optional: B6 (rebuild after Plex updates), B8 (weekly
+canary).
 
 ## License
 

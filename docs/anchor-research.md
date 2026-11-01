@@ -233,3 +233,12 @@ refused by the sandbox network and were not needed.
 - 2026-10-31 (session 4): autoplay across the queue window verified
   unpaused; companion fallback shown unusable with Plex Web (controller
   only; 404 from PMS); CI actions moved to their Node 24 majors.
+- 2026-11-01 (session 5): Plex Web **4.160.0** (build `75ddd7b`), bundled
+  with PMS 1.43.4.10903-e5521bd8c (package SHA-1 matched plex.tv's published
+  checksum; extracted on a workstation, no server involved): preflight
+  green. 208 JS files, 3,075 modules extracted; both player anchors resolve
+  in one module, primary active, fallback on standby; menu labels present.
+  Same location in the package (`Plug-ins-<build>/WebClient.bundle/...`).
+  The derived-image patch stage (`image/apply-in-build.sh`) applied cleanly
+  to it: `index.html` = original + one line. Export-capture shapes on 4.160.0
+  are only checked at runtime: not live-verified yet (BACKLOG B4).
