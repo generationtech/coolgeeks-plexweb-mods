@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { injectedVersion } from "../injector/html";
 import { BACKUP_SUFFIX, contentVersion, reapply, type ReapplyOptions } from "../injector/reapply";
-import { DockerFs, LocalFs, type Exec } from "../injector/target-fs";
+import { DockerFs, LocalFs, PodmanFs, type ContainerFlags, type Exec } from "../injector/target-fs";
 import { detectChunkGlobalsInDir } from "../preflight/extract";
 import { formatPreflight, runPreflight } from "../preflight/preflight";
 import type { PluginDef } from "../runtime/types";
@@ -153,18 +153,25 @@ describe("reapply on a local Linux-style install", () => {
 });
 
 /**
- * Emulates `docker exec/cp` against a directory standing in for the
- * container's filesystem, so the docker code path runs end to end.
+ * Emulates `docker|podman exec/cp/inspect` against a directory standing in
+ * for the container's filesystem, so the container code path runs end to end.
+ * A read-only container refuses `cp` into it, like the real engines.
  */
-function fakeDocker(containerRoot: string, name = "plex"): { exec: Exec; calls: string[][] } {
+function fakeDocker(
+  containerRoot: string,
+  name = "plex",
+  engine: "docker" | "podman" = "docker",
+  flags: ContainerFlags = { readOnly: false, autoRemove: false },
+): { exec: Exec; calls: string[][] } {
   const calls: string[][] = [];
   const inC = (p: string) => join(containerRoot, p);
   const exec: Exec = async (cmd, args) => {
     calls.push([cmd, ...args]);
     const ok = (stdout = "") => ({ code: 0, stdout, stderr: "" });
     const err = (stderr: string) => ({ code: 1, stdout: "", stderr });
-    if (cmd !== "docker") return err("not docker");
+    if (cmd !== engine) return err(`not ${engine}`);
     const [sub, ...rest] = args;
+    if (sub === "inspect") return rest.at(-1) === name ? ok(`${flags.readOnly} ${flags.autoRemove}\n`) : err(`no such container ${rest.at(-1)}`);
     if (sub === "exec") {
       const [c, prog, ...pargs] = rest;
       if (c !== name) return err(`No such container: ${c}`);
@@ -187,6 +194,7 @@ function fakeDocker(containerRoot: string, name = "plex"): { exec: Exec; calls: 
     }
     if (sub === "cp") {
       const [src, dst] = rest as [string, string];
+      if (dst.startsWith(`${name}:`) && flags.readOnly) return err("read-only file system");
       if (dst.startsWith(`${name}:`)) {
         copyFileSync(src, inC(dst.slice(name.length + 1)));
         return ok();
@@ -238,6 +246,74 @@ describe("reapply against a Docker container", () => {
 
   it("rejects unsafe container names", () => {
     expect(() => new DockerFs("plex; rm -rf /")).toThrow(/invalid container name/);
+    expect(() => new PodmanFs("$(id)")).toThrow(/invalid container name/);
+  });
+});
+
+describe("reapply against a Podman container", () => {
+  it("discovers, applies and uninstalls through podman exec/cp", async () => {
+    const { installRoot, webDir, runtimePath } = fakeInstall();
+    const { exec, calls } = fakeDocker(installRoot, "plex-test", "podman");
+    const fs = new PodmanFs("plex-test", exec);
+    const pristine = readFileSync(join(webDir, "index.html"), "utf8");
+
+    const r = await reapply(opts({ fs, runtimePath, installType: "podman" }));
+    expect(r.exitCode).toBe(0);
+    expect(r.messages.join("\n")).toMatch(/target: podman container "plex-test" \(podman\)/);
+    expect(readFileSync(join(webDir, "index.html"), "utf8")).toContain("plexweb-mods.js?v=");
+    expect(calls.every((c) => c[0] === "podman")).toBe(true);
+    expect(calls.some((c) => c[1] === "inspect")).toBe(true);
+
+    await reapply(opts({ fs, runtimePath, installType: "podman", mode: "uninstall" }));
+    expect(readFileSync(join(webDir, "index.html"), "utf8")).toBe(pristine);
+  });
+
+  it("refuses to apply or uninstall on a read-only root fs, pointing at the derived image; nothing is written", async () => {
+    const { installRoot, webDir, runtimePath } = fakeInstall();
+    const { exec, calls } = fakeDocker(installRoot, "plex", "podman", { readOnly: true, autoRemove: true });
+    const fs = new PodmanFs("plex", exec);
+    const pristine = readFileSync(join(webDir, "index.html"), "utf8");
+
+    for (const mode of ["apply", "uninstall"] as const) {
+      const r = await reapply(opts({ fs, runtimePath, installType: "podman", mode }));
+      expect(r.exitCode).toBe(1);
+      expect(r.messages.at(-1)).toMatch(/podman container "plex" has a read-only root filesystem.*derived image.*image\/Containerfile/);
+    }
+    expect(calls.some((c) => c[1] === "cp" && c[3]?.startsWith("plex:"))).toBe(false);
+    expect(readFileSync(join(webDir, "index.html"), "utf8")).toBe(pristine);
+    expect(existsSync(join(webDir, "index.html" + BACKUP_SUFFIX))).toBe(false);
+  });
+
+  it("only warns on --dry-run, and --status / --snapshot still work on a read-only container", async () => {
+    const { installRoot, runtimePath } = fakeInstall();
+    const { exec } = fakeDocker(installRoot, "plex", "podman", { readOnly: true, autoRemove: false });
+    const fs = new PodmanFs("plex", exec);
+    const dry = await reapply(opts({ fs, runtimePath, installType: "podman", dryRun: true }));
+    expect(dry.exitCode).toBe(0);
+    expect(dry.messages.join("\n")).toMatch(/WARNING: podman container "plex" has a read-only root filesystem/);
+    const status = await reapply(opts({ fs, runtimePath, installType: "podman", mode: "status" }));
+    expect(status.exitCode).toBe(0);
+    expect(status.messages.join("\n")).toMatch(/index.html: pristine/);
+    const snapRoot = tmp("snaps-");
+    const snap = await reapply(opts({ fs, runtimePath, installType: "podman", mode: "snapshot", snapshotDir: join(snapRoot, "bundle-snapshots", "podman-x") }));
+    expect(snap.exitCode).toBe(0);
+    expect(existsSync(join(snapRoot, "bundle-snapshots", "podman-x", "index.html"))).toBe(true);
+  });
+
+  it("notes that a --rm container loses the change at its next start", async () => {
+    const { installRoot, runtimePath } = fakeInstall();
+    const { exec } = fakeDocker(installRoot, "plex", "podman", { readOnly: false, autoRemove: true });
+    const r = await reapply(opts({ fs: new PodmanFs("plex", exec), runtimePath, installType: "podman" }));
+    expect(r.exitCode).toBe(0);
+    expect(r.messages.join("\n")).toMatch(/runs with --rm, so it is recreated from its image on every start.*derived image/);
+  });
+
+  it("carries on when inspect is unavailable (flags unknown)", async () => {
+    const { installRoot, runtimePath } = fakeInstall();
+    const { exec } = fakeDocker(installRoot, "plex", "podman");
+    const noInspect: Exec = (cmd, args) => (args[0] === "inspect" ? Promise.resolve({ code: 125, stdout: "", stderr: "unknown" }) : exec(cmd, args));
+    const r = await reapply(opts({ fs: new PodmanFs("plex", noInspect), runtimePath, installType: "podman" }));
+    expect(r.exitCode).toBe(0);
   });
 });
 
@@ -264,6 +340,20 @@ describe("CLI and shell wrapper", () => {
     expect(html).toContain('data-opt-pfh-companion="off"');
     expect(cli(["--status"], env).stdout).toMatch(/index.html: injected/);
     expect(cli(["--uninstall"], env).status).toBe(0);
+  });
+
+  it("selects podman from PLEX_INSTALL_TYPE and the container from PLEX_CONTAINER (over PLEX_DOCKER_CONTAINER)", () => {
+    const bin = tmp("fake-podman-");
+    const log = join(bin, "calls.log");
+    writeFileSync(join(bin, "podman"), `#!/bin/sh\necho "$*" >> "${log}"\nexit 1\n`, { mode: 0o755 });
+    const env = { PATH: `${bin}:${process.env.PATH!}`, PLEX_INSTALL_TYPE: "podman", PLEX_CONTAINER: "plex-new", PLEX_DOCKER_CONTAINER: "plex-old" };
+    const r = cli(["--status"], env);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toMatch(/could not find Plex Web .* on podman container "plex-new"/);
+    expect(readFileSync(log, "utf8")).toMatch(/^exec plex-new find \/usr\/lib\/plexmediaserver /m);
+    const bad = cli(["--status", "--container", "x;y"], env);
+    expect(bad.status).toBe(1);
+    expect(bad.stderr).toMatch(/invalid container name/);
   });
 
   it("rejects bad usage with exit code 2", () => {

@@ -45,8 +45,21 @@ cp .env.example .env                    # fill in; never commit .env
 ```
 
 Linux package installs usually need root to write the Plex Web directory:
-`sudo env "PATH=$PATH" ./injector/reapply.sh`. Docker installs
-(`PLEX_INSTALL_TYPE=docker`) go through `docker exec` / `docker cp`.
+`sudo env "PATH=$PATH" ./injector/reapply.sh`. Container installs: see below.
+
+## Container installs
+
+**Writable container** (`PLEX_INSTALL_TYPE=docker` or `podman`,
+`PLEX_CONTAINER=<name>`): the injector works through `<engine> exec` /
+`<engine> cp`, with the same preflight, backup and uninstall. Recreating the
+container (image update, or any start of a `--rm` container) restores Plex's
+files, so re-run it after each start (BACKLOG B6); the injector says so when
+the container runs with `--rm`.
+
+**Read-only root filesystem** (`--read-only`, e.g. a hardened Podman unit):
+nothing can be changed in place, and the injector refuses up front (exit 1)
+rather than fail halfway. `--status`, `--dry-run` and `--snapshot` still work.
+Build a derived image instead (`image/`).
 
 | Command | Purpose |
 | --- | --- |
@@ -76,7 +89,7 @@ auto). `--no-banner` keeps failures in the console only. In the browser,
 | --- | --- |
 | `runtime/` | loader (webpack hooks), patch engine, bootstrap, config, UI |
 | `patches/play-from-here/` | patch definitions, pure playQueue builder, Plex bindings behind small interfaces |
-| `injector/` | reapply tool + `reapply.sh` wrapper (Linux package and Docker) |
+| `injector/` | reapply tool + `reapply.sh` wrapper (Linux package, Docker and Podman; refuses read-only containers) |
 | `preflight/` | module extraction from bundle files, anchor report, `--find` |
 | `tools/` | public Plex Web snapshot tool |
 | `test/` | unit tests, synthetic fake webpack 4/5 bundles, real webpack 5 build |
@@ -139,7 +152,7 @@ Node 24 actions, with no Node 20 deprecation warning.
 - **PMS API:** a sorted section or season `uri` plus `key` yields the visible
   order from the clicked item on; filters are honoured. Plex Web's own
   library Play button sends the same `uri` without `key`.
-- **Tooling:** 241 unit tests. CI on GitHub-hosted runners runs gitleaks,
+- **Tooling:** 247 unit tests. CI on GitHub-hosted runners runs gitleaks,
   lint, tests, the build and the sandbox e2e, using Node 24 actions
   (`actions/checkout@v7`, `actions/setup-node@v7`, `actions/cache@v6`). The
   PMS package is cached by release version; no secrets are used.

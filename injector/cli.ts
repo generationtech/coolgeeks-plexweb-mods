@@ -6,8 +6,8 @@
  *   reapply.sh --uninstall     remove the injection and the runtime file
  *   reapply.sh --status        show the current state
  *
- * Config (env, see .env.example): PLEX_INSTALL_TYPE (linux|docker), PLEX_WEB_DIR,
- * PLEX_DOCKER_CONTAINER, PLEX_URL (only for --verify).
+ * Config (env, see .env.example): PLEX_INSTALL_TYPE (linux|docker|podman), PLEX_WEB_DIR,
+ * PLEX_CONTAINER (alias: PLEX_DOCKER_CONTAINER), PLEX_URL (only for --verify).
  * Exit codes: 0 ok, 1 error, 2 usage, 3 preflight failed.
  */
 import { dirname, join, resolve } from "node:path";
@@ -15,7 +15,7 @@ import { plugins } from "../patches/index";
 import { detectChunkGlobalsInDir } from "../preflight/extract";
 import { formatPreflight, runPreflight } from "../preflight/preflight";
 import { reapply, type Mode } from "./reapply";
-import { DockerFs, LocalFs } from "./target-fs";
+import { ContainerFs, INSTALL_TYPES, LocalFs, type InstallType } from "./target-fs";
 
 const HELP = `usage: reapply.sh [--dry-run] [--uninstall | --status] [options]
 
@@ -29,9 +29,12 @@ options:
   --no-banner          never show the on-page failure banner (console only)
   --verify             after applying, fetch PLEX_URL/web/index.html and the runtime over HTTP
   --opt key=value      plugin option, e.g. --opt pfh-companion=off (repeatable)
-  --install-type T     linux | docker            (env PLEX_INSTALL_TYPE, default linux)
+  --install-type T     linux | docker | podman   (env PLEX_INSTALL_TYPE, default linux)
   --web-dir DIR        Plex Web dir with index.html (env PLEX_WEB_DIR; auto-discovered if unset)
-  --container NAME     docker container         (env PLEX_DOCKER_CONTAINER, default plex)
+  --container NAME     docker/podman container  (env PLEX_CONTAINER or PLEX_DOCKER_CONTAINER, default plex)
+
+Containers with a read-only root filesystem (podman/docker run --read-only)
+cannot be changed in place: build a derived image instead (image/, README.md).
   --runtime PATH       built runtime            (default dist/plexweb-mods.js next to this tool)
 `;
 
@@ -51,7 +54,7 @@ async function main() {
   const opts: Record<string, string> = {};
   let installType = process.env.PLEX_INSTALL_TYPE || "linux";
   let webDir = process.env.PLEX_WEB_DIR || undefined;
-  let container = process.env.PLEX_DOCKER_CONTAINER || "plex";
+  let container = process.env.PLEX_CONTAINER || process.env.PLEX_DOCKER_CONTAINER || "plex";
   let runtimePath = resolve(__dirname, "plexweb-mods.js");
   let snapshotDir: string | undefined;
 
@@ -83,19 +86,19 @@ async function main() {
       process.exit(0);
     } else fail(`unknown argument ${a}`);
   }
-  if (installType !== "linux" && installType !== "docker") fail(`PLEX_INSTALL_TYPE must be linux or docker, got "${installType}"`);
+  if (!INSTALL_TYPES.includes(installType as InstallType)) fail(`PLEX_INSTALL_TYPE must be ${INSTALL_TYPES.join(", ")}; got "${installType}"`);
   if (verify && !process.env.PLEX_URL) fail("--verify needs PLEX_URL");
 
   if (mode === "snapshot" && !snapshotDir) {
     const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
     snapshotDir = join(dirname(__dirname), "bundle-snapshots", `${installType}-${stamp}`);
   }
-  const fs = installType === "docker" ? new DockerFs(container) : new LocalFs();
   try {
+    const fs = installType === "linux" ? new LocalFs() : new ContainerFs(installType as "docker" | "podman", container);
     const result = await reapply({
       fs,
       mode,
-      installType,
+      installType: installType as InstallType,
       ...(webDir ? { webDir } : {}),
       runtimePath,
       dryRun,

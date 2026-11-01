@@ -8,7 +8,7 @@ import { cpSync, existsSync, readFileSync } from "node:fs";
 import { posix } from "node:path";
 import type { PreflightResult } from "../preflight/preflight";
 import { hasInjection, injectedVersion, injectTag, lineDiff, removeInjection, renderTag, RUNTIME_FILENAME } from "./html";
-import { DEFAULT_SEARCH_ROOTS, PLEX_WEB_INDEX_SUFFIX, type TargetFs } from "./target-fs";
+import { DEFAULT_SEARCH_ROOTS, PLEX_WEB_INDEX_SUFFIX, type InstallType, type TargetFs } from "./target-fs";
 
 export const BACKUP_SUFFIX = ".plexweb-mods.orig";
 /** Service-worker filenames that would serve a stale index.html (cache-busting check). */
@@ -19,7 +19,7 @@ export type Mode = "apply" | "uninstall" | "status" | "snapshot";
 export interface ReapplyOptions {
   fs: TargetFs;
   mode: Mode;
-  installType: "linux" | "docker";
+  installType: InstallType;
   /** Directory containing Plex Web's index.html (on the target). Auto-discovered when empty. */
   webDir?: string;
   /** Local path of the built runtime (dist/plexweb-mods.js). */
@@ -140,6 +140,8 @@ async function run(o: ReapplyOptions, say: (s: string) => void, messages: string
     }
     return { exitCode: 0, webDir, changed: false, messages };
   }
+
+  await checkContainerFlags(o, say);
 
   if (o.mode === "uninstall") {
     if (!injected) {
@@ -264,6 +266,26 @@ async function run(o: ReapplyOptions, say: (s: string) => void, messages: string
         : "already applied and up to date; nothing changed",
   );
   return { exitCode: 0, webDir, changed, messages };
+}
+
+/** Where to send people whose container cannot be changed in place. */
+export const DERIVED_IMAGE_HINT = 'bake the mods into a derived image instead: see "Container installs" in README.md (image/Containerfile)';
+
+/**
+ * Apply and uninstall write into the container. A read-only root fs makes
+ * that fail (refuse up front, with the way out); --rm makes it short-lived.
+ */
+async function checkContainerFlags(o: ReapplyOptions, say: (s: string) => void): Promise<void> {
+  const flags = o.fs.containerFlags ? await o.fs.containerFlags() : null;
+  if (!flags) return;
+  if (flags.readOnly) {
+    const what = `${o.fs.describe()} has a read-only root filesystem, so Plex Web cannot be changed in place; ${DERIVED_IMAGE_HINT}`;
+    if (!o.dryRun) throw new ReapplyError(what);
+    say(`WARNING: ${what}`);
+  }
+  if (flags.autoRemove && o.mode === "apply") {
+    say(`note: ${o.fs.describe()} runs with --rm, so it is recreated from its image on every start and loses this change; to keep it, ${DERIVED_IMAGE_HINT}`);
+  }
 }
 
 async function verifyHttp(o: ReapplyOptions, version: string, say: (s: string) => void): Promise<void> {

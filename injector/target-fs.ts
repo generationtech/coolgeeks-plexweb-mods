@@ -1,12 +1,24 @@
 /**
  * Filesystem access to where Plex Web lives: directly on this machine
- * (Linux package install) or inside a Docker container (docker exec / cp).
+ * (Linux package install) or inside a Docker or Podman container
+ * (`<engine> exec` / `<engine> cp`).
  */
 import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+
+export type InstallType = "linux" | "docker" | "podman";
+export const INSTALL_TYPES: readonly InstallType[] = ["linux", "docker", "podman"];
+
+/** Container settings that decide whether an in-place change can work or last. */
+export interface ContainerFlags {
+  /** Started with a read-only root filesystem (`--read-only`): writes fail. */
+  readOnly: boolean;
+  /** Started with `--rm`: recreated from its image on every start, so changes are lost. */
+  autoRemove: boolean;
+}
 
 export interface TargetFs {
   describe(): string;
@@ -20,14 +32,22 @@ export interface TargetFs {
   findPlexWebIndex(root: string): Promise<string[]>;
   /** A local directory with the target dir's contents (read-only use). */
   localView(path: string): Promise<string>;
+  /** Containers only: flags that block or undo in-place changes; null when unknown. */
+  containerFlags?(): Promise<ContainerFlags | null>;
 }
 
 export const PLEX_WEB_INDEX_SUFFIX = "WebClient.bundle/Contents/Resources/index.html";
 
-/** PMS install roots to search when PLEX_WEB_DIR is not set. The PMS 1.43.5 package uses the first (verified); Docker images are expected to match (unverified, BACKLOG B1). */
-export const DEFAULT_SEARCH_ROOTS: Record<"linux" | "docker", string[]> = {
+/**
+ * PMS install roots to search when PLEX_WEB_DIR is not set. The PMS .deb
+ * (1.43.4 and 1.43.5) uses the first (verified); container images built from
+ * that package share it. The official Docker image is expected to match
+ * (unverified, BACKLOG B7).
+ */
+export const DEFAULT_SEARCH_ROOTS: Record<InstallType, string[]> = {
   linux: ["/usr/lib/plexmediaserver", "/usr/lib64/plexmediaserver", "/opt/plexmediaserver"],
   docker: ["/usr/lib/plexmediaserver"],
+  podman: ["/usr/lib/plexmediaserver"],
 };
 
 export class LocalFs implements TargetFs {
@@ -92,23 +112,25 @@ export const execProcess: Exec = (cmd, args) =>
     });
   });
 
-export class DockerFs implements TargetFs {
+/** Plex Web inside a running container, through `<engine> exec` and `<engine> cp`. */
+export class ContainerFs implements TargetFs {
   constructor(
+    readonly engine: "docker" | "podman",
     private readonly container: string,
     private readonly exec: Exec = execProcess,
   ) {
     if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(container)) throw new Error(`invalid container name "${container}"`);
   }
   describe() {
-    return `docker container "${this.container}"`;
+    return `${this.engine} container "${this.container}"`;
   }
   private async run(args: string[], what: string): Promise<string> {
-    const r = await this.exec("docker", args);
-    if (r.code !== 0) throw new Error(`${what} failed (docker ${args.join(" ")}): ${r.stderr.trim() || `exit ${r.code}`}`);
+    const r = await this.exec(this.engine, args);
+    if (r.code !== 0) throw new Error(`${what} failed (${this.engine} ${args.join(" ")}): ${r.stderr.trim() || `exit ${r.code}`}`);
     return r.stdout;
   }
   async exists(p: string) {
-    return (await this.exec("docker", ["exec", this.container, "test", "-e", p])).code === 0;
+    return (await this.exec(this.engine, ["exec", this.container, "test", "-e", p])).code === 0;
   }
   readText(p: string) {
     return this.run(["exec", this.container, "cat", p], `reading ${p}`);
@@ -130,12 +152,30 @@ export class DockerFs implements TargetFs {
     await this.run(["exec", this.container, "rm", "-f", p], `removing ${p}`);
   }
   async findPlexWebIndex(root: string) {
-    const r = await this.exec("docker", ["exec", this.container, "find", root, "-maxdepth", "9", "-path", `*/${PLEX_WEB_INDEX_SUFFIX}`]);
+    const r = await this.exec(this.engine, ["exec", this.container, "find", root, "-maxdepth", "9", "-path", `*/${PLEX_WEB_INDEX_SUFFIX}`]);
     return r.stdout.split("\n").map((s) => s.trim()).filter(Boolean);
   }
   async localView(p: string) {
     const dir = mkdtempSync(join(tmpdir(), "plexweb-mods-view-"));
     await this.run(["cp", `${this.container}:${p}`, dir], `copying ${p} out of the container`);
     return join(dir, basename(p));
+  }
+  async containerFlags(): Promise<ContainerFlags | null> {
+    // Both engines expose Docker's HostConfig fields in `inspect`.
+    const r = await this.exec(this.engine, ["inspect", "--format", "{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.AutoRemove}}", this.container]);
+    const m = r.code === 0 ? /^(true|false) (true|false)$/.exec(r.stdout.trim()) : null;
+    return m ? { readOnly: m[1] === "true", autoRemove: m[2] === "true" } : null;
+  }
+}
+
+export class DockerFs extends ContainerFs {
+  constructor(container: string, exec: Exec = execProcess) {
+    super("docker", container, exec);
+  }
+}
+
+export class PodmanFs extends ContainerFs {
+  constructor(container: string, exec: Exec = execProcess) {
+    super("podman", container, exec);
   }
 }

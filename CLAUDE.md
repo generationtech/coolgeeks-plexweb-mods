@@ -81,7 +81,8 @@ downloads are blocked, `go install github.com/zricethezav/gitleaks/v8@v8.30.1`.
 - `patches/<mod>/` — one directory per mod: patch definitions (anchors),
   pure logic, and the Plex-coupled bindings behind a small interface.
 - `injector/` — the reapply tool (Node + `reapply.sh` wrapper). Linux package
-  and Docker installs. Idempotent; dry-run, backup, uninstall.
+  and Docker/Podman installs (refuses read-only containers). Idempotent;
+  dry-run, backup, uninstall.
 - `preflight/` — read-only anchor resolution report against a bundle dir
   (`--find <text>` for research: module ids only, never code).
 - `tools/` — snapshot of a public Plex Web URL into `bundle-snapshots/`.
