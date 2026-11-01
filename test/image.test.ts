@@ -94,13 +94,32 @@ describe("image/apply-in-build.sh (the patch stage)", () => {
 describe("image/build-image.sh (the build wrapper)", () => {
   const NODE = `docker.io/library/node:22-bookworm-slim@sha256:${"ab12".repeat(16)}`;
 
+  const DIGEST = `sha256:${"d1".repeat(32)}`;
+  const ID = "e2".repeat(32);
+  /**
+   * The fake engine answers `image inspect` like podman: a manifest digest for
+   * {{.Digest}}, a bare image ID for {{.Id}}; `build` succeeds.
+   */
+  const PODMAN_LIKE = `case "$1 $3 $4" in
+  "image --format {{.Digest}}") echo "${DIGEST}" ;;
+  "image --format {{.Id}}") echo "${ID}" ;;
+esac
+case "$1" in image | build) exit 0 ;; esac; exit 9`;
+  /** Like docker for a locally built image: no digest at all, ID with its prefix. */
+  const DOCKER_LIKE = `case "$1 $3 $4" in
+  "image --format {{.Digest}}" | "image --format {{index .RepoDigests 0}}") exit 1 ;;
+  "image --format {{.Id}}") echo "sha256:${ID}" ;;
+esac
+case "$1" in image | build) exit 0 ;; esac; exit 9`;
+
   /** A build context like dist/image/, and a fake engine that logs its calls. */
-  function setup(engineScript = 'case "$1" in image) exit 0 ;; build) exit 0 ;; esac; exit 9') {
+  function setup(engineScript = PODMAN_LIKE) {
     const ctx = tmp("image-ctx-");
     for (const f of ["Containerfile", "apply-in-build.sh", "build-image.sh", "README.md"]) copyFileSync(join(root, "image", f), join(ctx, f));
     writeFileSync(join(ctx, "injector.cjs"), "/* injector */");
     writeFileSync(join(ctx, "plexweb-mods.js"), "/* runtime */");
     writeFileSync(join(ctx, "VERSION"), "9.9.9+test runtime=0123456789ab\n");
+    writeFileSync(join(ctx, "REVISION"), `${"c3".repeat(20)}\n`);
     writeFileSync(join(ctx, "SHA256SUMS"), readdirSync(ctx).sort().map((f) => `${sha256(join(ctx, f))}  ${f}\n`).join(""));
     const bin = tmp("image-bin-");
     const log = join(bin, "calls.log");
@@ -119,22 +138,31 @@ describe("image/build-image.sh (the build wrapper)", () => {
     const r = run([...base, "--opt", "pfh-companion=off", "--opt", "pfh-drop-params=a,b", "--no-banner"]);
     expect(r.status, r.stderr).toBe(0);
     expect(r.stdout).toMatch(/build-image: built localhost\/plex-mods:1\.2\.3\.4-abc/);
-    const [inspect, buildCall] = calls();
-    expect(inspect).toEqual(["podman", "image", "inspect", "localhost/plex:1.2.3.4-abc"]);
-    expect(buildCall).toEqual([
+    const all = calls();
+    expect(all[0]).toEqual(["podman", "image", "inspect", "localhost/plex:1.2.3.4-abc"]);
+    expect(all.at(-1)).toEqual([
       "podman", "build", "--network", "none",
       "--build-arg", "PLEX_IMAGE=localhost/plex:1.2.3.4-abc",
       "--build-arg", `NODE_IMAGE=${NODE}`,
       "--build-arg", "MODS_ARGS=--opt pfh-companion=off --opt pfh-drop-params=a,b --no-banner",
       "--build-arg", "MODS_VERSION=9.9.9+test runtime=0123456789ab",
+      "--build-arg", `MODS_REVISION=${"c3".repeat(20)}`,
+      "--build-arg", `PLEX_IMAGE_DIGEST=${DIGEST}`,
+      "--build-arg", `PLEX_IMAGE_ID=sha256:${ID}`,
       "-f", "Containerfile", "-t", "localhost/plex-mods:1.2.3.4-abc", ".",
     ]);
+    expect(r.stdout).toContain(`(digest ${DIGEST}, id sha256:${ID})`);
   });
 
-  it("uses docker when asked", () => {
-    const { run, calls } = setup();
-    expect(run([...base, "--engine", "docker"]).status).toBe(0);
-    expect(calls().map((c) => c[0])).toEqual(["docker", "docker"]);
+  it("uses docker when asked; without a manifest digest the label falls back to the image ID", () => {
+    const { run, calls } = setup(DOCKER_LIKE);
+    const r = run([...base, "--engine", "docker"]);
+    expect(r.status, r.stderr).toBe(0);
+    expect(new Set(calls().map((c) => c[0]))).toEqual(new Set(["docker"]));
+    expect(r.stderr).toMatch(/reports no manifest digest .* records its image ID only/);
+    const build = calls().at(-1)!;
+    expect(build).toContain("PLEX_IMAGE_DIGEST=unknown");
+    expect(build).toContain(`PLEX_IMAGE_ID=sha256:${ID}`);
   });
 
   it.each([
@@ -161,6 +189,14 @@ describe("image/build-image.sh (the build wrapper)", () => {
     expect(calls()).toEqual([]);
   });
 
+  it("stops when the Plex image ID cannot be read", () => {
+    const { run, calls } = setup('case "$1 $3 $4" in "image --format {{.Id}}") exit 1 ;; esac; case "$1" in image) exit 0 ;; esac; exit 9');
+    const r = run(base);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/could not read the image ID/);
+    expect(calls().some((c) => c[1] === "build")).toBe(false);
+  });
+
   it("stops when the Plex image is not there", () => {
     const { run, calls } = setup('case "$1" in image) exit 1 ;; esac; exit 0');
     const r = run(base);
@@ -170,7 +206,7 @@ describe("image/build-image.sh (the build wrapper)", () => {
   });
 
   it("reports a failed build (e.g. preflight exit 3 in the patch stage) with what to do", () => {
-    const { run } = setup('case "$1" in image) exit 0 ;; esac; exit 3');
+    const { run } = setup(PODMAN_LIKE.replace("image | build) exit 0", "image) exit 0 ;; build) exit 3"));
     const r = run(base);
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/build failed \(exit 3\)\. If the log above says 'preflight failed'.*keep running your current image/);
@@ -180,6 +216,17 @@ describe("image/build-image.sh (the build wrapper)", () => {
 describe("image/Containerfile and the dist/image assembly", () => {
   const cf = readFileSync(join(root, "image/Containerfile"), "utf8");
   const lines = cf.split("\n").filter((l) => l.trim() && !l.startsWith("#"));
+
+  it("labels the result with the mods revision and the base image's name, digest and ID (OCI keys)", () => {
+    const label = lines.filter((l) => /^(LABEL|\s+[a-z])/.test(l)).join("\n");
+    for (const kv of [
+      'org.opencontainers.image.revision="${MODS_REVISION}"',
+      'org.opencontainers.image.base.name="${PLEX_IMAGE}"',
+      'org.opencontainers.image.base.digest="${PLEX_IMAGE_DIGEST}"',
+      'io.github.generationtech.plexweb-mods.base.id="${PLEX_IMAGE_ID}"',
+    ])
+      expect(label).toContain(kv);
+  });
 
   it("has no default for the Plex or Node image (both must be passed)", () => {
     expect(lines).toContain("ARG PLEX_IMAGE");

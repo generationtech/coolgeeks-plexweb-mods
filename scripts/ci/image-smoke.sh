@@ -50,8 +50,13 @@ echo "image-smoke: node image $node_pinned"
 for f in '{{.Config.User}}' '{{json .Config.Entrypoint}}' '{{json .Config.Cmd}}'; do
   [ "$(inspect "$IMG/plex-mods:pass" "$f")" = "$(inspect "$IMG/plex:pass" "$f")" ] || fail "$f differs from the Plex image"
 done
-label=$(inspect "$IMG/plex-mods:pass" '{{index .Labels "io.github.generationtech.plexweb-mods.version"}}')
-[ "$label" = "$(cat "$CTX/VERSION")" ] || fail "version label is '$label'"
+label() { inspect "$IMG/plex-mods:pass" "{{index .Labels \"$1\"}}"; }
+[ "$(label io.github.generationtech.plexweb-mods.version)" = "$(cat "$CTX/VERSION")" ] || fail "version label is '$(label io.github.generationtech.plexweb-mods.version)'"
+[ "$(label org.opencontainers.image.revision)" = "$(cat "$CTX/REVISION")" ] || fail "revision label is '$(label org.opencontainers.image.revision)'"
+[ "$(label org.opencontainers.image.base.name)" = "$IMG/plex:pass" ] || fail "base.name label is '$(label org.opencontainers.image.base.name)'"
+[ "$(label org.opencontainers.image.base.digest)" = "$(inspect "$IMG/plex:pass" '{{.Digest}}')" ] || fail "base.digest label is '$(label org.opencontainers.image.base.digest)'"
+[ "$(label io.github.generationtech.plexweb-mods.base.id)" = "sha256:$(inspect "$IMG/plex:pass" '{{.Id}}' | sed 's/^sha256://')" ] || fail "base.id label is '$(label io.github.generationtech.plexweb-mods.base.id)'"
+echo "image-smoke: labels OK (revision $(label org.opencontainers.image.revision), base $(label org.opencontainers.image.base.digest))"
 
 files "$IMG/plex:pass" > "$WORK/base.list"
 files "$IMG/plex-mods:pass" > "$WORK/derived.list"

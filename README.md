@@ -193,7 +193,7 @@ same PMS release: it is flaky (BACKLOG B11).
 - **PMS API:** a sorted section or season `uri` plus `key` yields the visible
   order from the clicked item on; filters are honoured. Plex Web's own
   library Play button sends the same `uri` without `key`.
-- **Tooling:** 270 unit tests. CI on GitHub-hosted runners runs gitleaks,
+- **Tooling:** 272 unit tests. CI on GitHub-hosted runners runs gitleaks,
   lint, tests, the build, the sandbox e2e, and a real podman build of the
   derived image against synthetic Plex bases (one must pass, one must fail
   on preflight; `scripts/ci/image-smoke.sh`), using Node 24 actions

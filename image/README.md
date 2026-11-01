@@ -27,8 +27,10 @@ FROM plex
 
 `npm run build` writes this directory to `dist/image/`: `Containerfile`,
 `apply-in-build.sh`, `build-image.sh`, `injector.cjs`, `plexweb-mods.js`,
-`VERSION`, `SHA256SUMS`, this file. Copy it to the host that holds your Plex
-image; `build-image.sh` checks `SHA256SUMS` before building.
+`VERSION`, `REVISION` (the full commit SHA, `-dirty` if tracked files were
+changed), `SHA256SUMS`, this file; modes 0640, scripts and the directory
+0750. Copy it to the host that holds your Plex image (`rsync -rlpt` keeps the
+modes); `build-image.sh` checks `SHA256SUMS` before building.
 
 ## Build
 
@@ -47,10 +49,25 @@ digest with `podman pull <image>` then
 
 Expected output ends with the injector's anchor report, `plexweb-mods: image
 layer (sha256):` listing the two files, and `build-image: built <tag>`.
-Then point your container definition at the new tag and restart it. The
-label `io.github.generationtech.plexweb-mods.version` records the mods
-version and runtime hash; the served `index.html` references
-`plexweb-mods.js?v=<runtime hash>`.
+Then point your container definition at the new tag and restart it.
+
+## Tracing a running image to its build
+
+| Label | Value |
+| --- | --- |
+| `org.opencontainers.image.revision` | plexweb-mods commit SHA (`REVISION`) |
+| `org.opencontainers.image.source` | this repository |
+| `org.opencontainers.image.base.name` | the `--plex-image` reference |
+| `org.opencontainers.image.base.digest` | its manifest digest (`unknown` where the engine has none, e.g. docker for a local build) |
+| `io.github.generationtech.plexweb-mods.base.id` | its image ID |
+| `io.github.generationtech.plexweb-mods.version` | mods version and runtime hash (`VERSION`) |
+
+```sh
+podman image inspect --format '{{json .Labels}}' <tag>
+```
+
+The served `index.html` references `plexweb-mods.js?v=<runtime hash>`,
+the same hash as in `VERSION`.
 
 After every Plex image update, rebuild from the new Plex image. The
 anchors are checked against the new Plex Web automatically.

@@ -11,8 +11,11 @@ import { execFileSync } from "node:child_process";
 
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 let rev = "dev";
+let revision = "unknown"; // full commit SHA for the image label, "-dirty" if tracked files changed
 try {
   rev = execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim();
+  revision = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  if (execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { encoding: "utf8" }).trim()) revision += "-dirty";
 } catch {
   /* not a git checkout */
 }
@@ -49,19 +52,23 @@ for (const [entry, outfile] of entries) {
 
 // dist/image/: build context for a derived container image (image/README.md).
 // VERSION carries the runtime's content hash, the same ?v= value the injector
-// writes into index.html; SHA256SUMS is checked by build-image.sh.
+// writes into index.html; REVISION the full commit SHA (an image label);
+// SHA256SUMS is checked by build-image.sh. Modes are fixed (dir and scripts
+// 0750, files 0640) so a copy to the build host does not depend on umask.
 const IMAGE_FILES = ["Containerfile", "apply-in-build.sh", "build-image.sh", "README.md"];
 const imageDir = "dist/image";
 rmSync(imageDir, { recursive: true, force: true });
 mkdirSync(imageDir, { recursive: true });
 for (const f of IMAGE_FILES) copyFileSync(`image/${f}`, `${imageDir}/${f}`);
 for (const f of ["injector.cjs", "plexweb-mods.js"]) copyFileSync(`dist/${f}`, `${imageDir}/${f}`);
-for (const f of ["apply-in-build.sh", "build-image.sh"]) chmodSync(`${imageDir}/${f}`, 0o755);
 const sha256 = (p) => createHash("sha256").update(readFileSync(p)).digest("hex");
 writeFileSync(`${imageDir}/VERSION`, `${version} runtime=${sha256(`${imageDir}/plexweb-mods.js`).slice(0, 12)}\n`);
+writeFileSync(`${imageDir}/REVISION`, `${revision}\n`);
 const sums = readdirSync(imageDir)
   .sort()
   .map((f) => `${sha256(`${imageDir}/${f}`)}  ${f}\n`)
   .join("");
 writeFileSync(`${imageDir}/SHA256SUMS`, sums);
+for (const f of readdirSync(imageDir)) chmodSync(`${imageDir}/${f}`, f.endsWith(".sh") ? 0o750 : 0o640);
+chmodSync(imageDir, 0o750);
 console.log(`built ${version} (and ${imageDir}/)`);

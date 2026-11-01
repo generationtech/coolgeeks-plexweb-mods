@@ -7,7 +7,10 @@
 #   NODE_IMAGE    a Node >= 22.12 image pinned by digest. Used only in the
 #                 throwaway patch stage; nothing from it reaches the result.
 #   MODS_ARGS     extra injector flags (--opt key=value, --no-banner)
-#   MODS_VERSION  label value (the build context's VERSION file)
+#   MODS_VERSION  the build context's VERSION file
+#   MODS_REVISION the plexweb-mods commit it was built from (REVISION file)
+#   PLEX_IMAGE_DIGEST, PLEX_IMAGE_ID  the Plex image's manifest digest and ID,
+#                 read by build-image.sh, so a running image traces to its base
 #
 # If a required anchor does not resolve in this Plex Web, the injector exits
 # 3, the RUN fails and so does the build: the image you run keeps working.
@@ -27,5 +30,15 @@ RUN sh /plexweb-mods/apply-in-build.sh ${MODS_ARGS}
 
 FROM plex
 COPY --from=patch /out/ /
+ARG PLEX_IMAGE
+ARG PLEX_IMAGE_DIGEST=unknown
+ARG PLEX_IMAGE_ID=unknown
 ARG MODS_VERSION=unknown
-LABEL io.github.generationtech.plexweb-mods.version="${MODS_VERSION}"
+ARG MODS_REVISION=unknown
+# revision/source describe the mods layer; base.* point at the Plex image.
+LABEL org.opencontainers.image.revision="${MODS_REVISION}" \
+      org.opencontainers.image.source="https://github.com/generationtech/coolgeeks-plexweb-mods" \
+      org.opencontainers.image.base.name="${PLEX_IMAGE}" \
+      org.opencontainers.image.base.digest="${PLEX_IMAGE_DIGEST}" \
+      io.github.generationtech.plexweb-mods.base.id="${PLEX_IMAGE_ID}" \
+      io.github.generationtech.plexweb-mods.version="${MODS_VERSION}"

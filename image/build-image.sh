@@ -54,14 +54,34 @@ printf '%s' "$node_image" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._/:-]*@sha256:[0-9a
 sha256sum -c --quiet SHA256SUMS || die "this build context does not match its SHA256SUMS (incomplete copy, or changed?)"
 "$engine" image inspect "$plex_image" >/dev/null 2>&1 || die "Plex image $plex_image not found ($engine image inspect)"
 version=$(cat VERSION)
+revision=$(cat REVISION)
 
-echo "build-image: $plex_image + plexweb-mods $version -> $tag"
+# Trace the base: its manifest digest (podman has one for local builds too;
+# docker only for pulled images) and its image ID (always there).
+is_digest() { printf '%s' "$1" | grep -Eq '^sha256:[0-9a-f]{64}$'; }
+plex_digest=$("$engine" image inspect --format '{{.Digest}}' "$plex_image" 2>/dev/null || true)
+if ! is_digest "$plex_digest"; then
+  plex_digest=$("$engine" image inspect --format '{{index .RepoDigests 0}}' "$plex_image" 2>/dev/null || true)
+  plex_digest=${plex_digest##*@}
+fi
+if ! is_digest "$plex_digest"; then
+  echo "build-image: note: $engine reports no manifest digest for $plex_image; the label records its image ID only" >&2
+  plex_digest=unknown
+fi
+plex_id=$("$engine" image inspect --format '{{.Id}}' "$plex_image" 2>/dev/null || true)
+plex_id="sha256:${plex_id#sha256:}"
+is_digest "$plex_id" || die "could not read the image ID of $plex_image"
+
+echo "build-image: $plex_image (digest $plex_digest, id $plex_id) + plexweb-mods $version ($revision) -> $tag"
 # No network for RUN steps: the patch stage only reads and writes files.
 "$engine" build --network none \
   --build-arg PLEX_IMAGE="$plex_image" \
   --build-arg NODE_IMAGE="$node_image" \
   --build-arg MODS_ARGS="${mods_args# }" \
   --build-arg MODS_VERSION="$version" \
+  --build-arg MODS_REVISION="$revision" \
+  --build-arg PLEX_IMAGE_DIGEST="$plex_digest" \
+  --build-arg PLEX_IMAGE_ID="$plex_id" \
   -f Containerfile -t "$tag" . ||
   die "build failed (exit $?). If the log above says 'preflight failed', this Plex Web breaks a required anchor: keep running your current image."
 echo "build-image: built $tag"
