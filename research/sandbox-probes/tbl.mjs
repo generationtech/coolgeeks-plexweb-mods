@@ -1,0 +1,32 @@
+import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
+const { chromium } = createRequire(new URL("../../package.json", import.meta.url))("@playwright/test");
+const runtime = readFileSync(new URL("../../dist/plexweb-mods.js", import.meta.url), "utf8");
+const browser = await chromium.launch();
+const page = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
+const MID = (await (await fetch("http://127.0.0.1:32400/identity", { headers: { Accept: "application/json" } })).json()).MediaContainer.machineIdentifier;
+await page.route(/\/web\/index\.html(\?.*)?$/, async (route) => { const res = await route.fetch(); const html = (await res.text()).replace("<script", `<script src="plexweb-mods.js?v=t" data-chunk-globals="webpackChunkplex_web_client"></script><script`); await route.fulfill({ response: res, body: html, headers: { ...res.headers(), "content-type": "text/html" } }); });
+await page.route(/\/web\/plexweb-mods\.js(\?.*)?$/, (r) => r.fulfill({ body: runtime, contentType: "application/javascript" }));
+const lib = `http://127.0.0.1:32400/web/index.html#!/media/${MID}/com.plexapp.plugins.library?source=1&pivot=library`;
+await page.goto(lib); await page.waitForTimeout(6000);
+const setup = page.getByText("Finish Setup"); if (await setup.count()) { await setup.first().click(); await page.waitForTimeout(2000); await page.goto(lib); await page.waitForTimeout(5000); }
+const d = page.getByText("Don't show this again"); if (await d.count()) { await d.first().click(); await page.waitForTimeout(2000); }
+await page.locator('[data-testid="toolbarView"]').click(); await page.getByRole("menuitem", { name: /^Table View/ }).first().click(); await page.waitForTimeout(2000);
+console.log("popup buttons:", JSON.stringify(await page.$$eval('button[aria-haspopup]', (bs) => bs.filter(b => b.offsetParent).map((b) => (b.textContent || "").trim() + "|" + b.getAttribute("aria-label")))));
+console.log("column headers:", JSON.stringify(await page.$$eval('[role="columnheader"], [role="button"][aria-sort], [aria-sort]', (bs) => bs.map((b) => (b.textContent || "").trim() + "|" + b.getAttribute("aria-sort") + "|" + b.tagName))));
+const hdrs = await page.$$eval("div,span,button", (els) => els.filter((e) => e.children.length === 0 && /^(Title|Year|Date Added|Duration)$/.test((e.textContent || "").trim()) && e.offsetParent).map((e) => e.tagName + ":" + e.textContent.trim() + ":" + (e.closest("[role]")?.getAttribute("role") ?? "") + ":" + (e.closest("button") ? "inbutton" : "")));
+console.log("header-like texts:", JSON.stringify(hdrs));
+await page.screenshot({ path: process.argv[2] + "/tbl-view.png" });
+const link = page.locator('a[href*="%2Flibrary%2Fmetadata%2F3&"]').first();
+await link.hover(); await page.waitForTimeout(500);
+const row = link.locator('xpath=ancestor::*[.//button[@aria-label="More Actions"]][1]');
+console.log("row more buttons:", await row.locator('button[aria-label="More Actions"]').count());
+console.log("ancestry of row's More Actions:", await row.locator('button[aria-label="More Actions"]').first().evaluate((b) => { const out = []; let n = b; for (let i = 0; n && i < 7; i++, n = n.parentElement) out.push(`${n.tagName.toLowerCase()} keys=${new Set([...n.querySelectorAll('a[href*="%2Flibrary%2Fmetadata%2F"]')].map(a => /metadata%2F(\d+)/.exec(a.getAttribute("href"))[1])).size}`); return out.join(" < "); }));
+await row.locator('button[aria-label="More Actions"]').first().click(); await page.waitForTimeout(1000);
+const items = await page.$$eval('[role="menuitem"]', (els) => els.map((e) => (e.textContent || "").trim() + (e.hasAttribute("data-plexweb-mods") ? "*" : "")));
+console.log("menu items:", items.join(" | "));
+console.log("route:", page.url().replace(MID, "<MID>"), "listing:", await page.evaluate(() => JSON.stringify(window.__plexwebMods.plugins["play-from-here"].tracker.current({ sectionId: "1" })?.containerPath ?? null)));
+await page.screenshot({ path: process.argv[2] + "/tbl-menu.png" });
+await page.keyboard.press("Escape");
+await page.locator('[data-testid="toolbarView"]').click(); await page.getByRole("menuitem", { name: /^Grid View/ }).first().click(); await page.waitForTimeout(1000);
+await browser.close();

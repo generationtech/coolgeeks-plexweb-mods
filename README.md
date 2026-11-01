@@ -79,6 +79,7 @@ auto). `--no-banner` keeps failures in the console only. In the browser,
 | `test/` | unit tests, synthetic fake webpack 4/5 bundles, real webpack 5 build |
 | `e2e/` | Playwright e2e (token auth injected into storage; never a stored login) |
 | `docs/anchor-research.md` | anchor findings (anchor strings only) |
+| `research/sandbox-probes/` | the one-off sandbox scripts behind those findings (historical; e2e supersedes them) |
 | `BACKLOG.md` | everything that needs the real server, with exact commands |
 | `CLAUDE.md` | standing rules for this public repo |
 

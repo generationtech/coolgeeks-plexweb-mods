@@ -1,0 +1,13 @@
+import { createRequire } from "node:module"; const { chromium } = createRequire(new URL("../../package.json", import.meta.url))("@playwright/test");
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+const reqs = [];
+page.on("request", (r) => { const u = new URL(r.url()); if (!/\.(js|css|png|svg|woff2?|json)$/.test(u.pathname)) reqs.push(`${r.method()} ${u.host}${u.pathname}`); });
+page.on("console", (m) => { if (m.type() === "error") console.log("console.error:", m.text().slice(0, 200)); });
+await page.goto("http://127.0.0.1:32400/web/index.html", { waitUntil: "load" });
+await page.waitForTimeout(12000);
+console.log("URL:", page.url());
+console.log("TEXT:", (await page.evaluate(() => document.body.innerText)).replace(/\s+/g, " ").slice(0, 600));
+await page.screenshot({ path: process.argv[2] + "/ui1.png" });
+console.log("REQS:", [...new Set(reqs)].slice(0, 40).join("\n  "));
+await browser.close();
