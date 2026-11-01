@@ -174,6 +174,10 @@ Node 24 actions, with no Node 20 deprecation warning.
   1.43.4.10903 package, checked offline), 4.162.1, and the initial chunks of
   4.163.0 from app.plex.tv. Live runs so far used 4.162.1 only. See
   `docs/anchor-research.md`.
+- **Workstation development:** the pre-commit hook loads nvm's Node when a
+  GUI git client runs it without Node 22 on PATH. Owner-only notes live in
+  the gitignored `local/`; the hook and a gitleaks rule refuse it even when
+  force-added.
 - **Container installs:** the injector works in place in writable Docker or
   Podman containers. It refuses read-only ones up front, pointing to the
   **derived image** (`image/`): your Plex image plus one layer with
@@ -186,7 +190,9 @@ Node 24 actions, with no Node 20 deprecation warning.
   order from the clicked item on; filters are honoured. Plex Web's own
   library Play button sends the same `uri` without `key`.
 - **Tooling:** 267 unit tests. CI on GitHub-hosted runners runs gitleaks,
-  lint, tests, the build and the sandbox e2e, using Node 24 actions
+  lint, tests, the build, the sandbox e2e, and a real podman build of the
+  derived image against synthetic Plex bases (one must pass, one must fail
+  on preflight; `scripts/ci/image-smoke.sh`), using Node 24 actions
   (`actions/checkout@v7`, `actions/setup-node@v7`, `actions/cache@v6`). The
   PMS package is cached by release version; no secrets are used.
 

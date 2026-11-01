@@ -66,12 +66,13 @@ On the container host (through ssh), then over HTTP from the workstation:
 
 ```sh
 ssh "$PLEX_SSH" "podman ps --format '{{.Names}}  {{.Image}}'"
-ssh "$PLEX_SSH" "podman inspect --format 'image={{.ImageName}} readonly={{.HostConfig.ReadonlyRootfs}} rm={{.HostConfig.AutoRemove}} user={{.Config.User}}' <container>"
-ssh "$PLEX_SSH" "podman exec <container> find /usr/lib/plexmediaserver -path '*WebClient.bundle/Contents/Resources/index.html'"
+ssh "$PLEX_SSH" "podman inspect --format 'image={{.ImageName}} readonly={{.HostConfig.ReadonlyRootfs}} rm={{.HostConfig.AutoRemove}} user={{.Config.User}}' '$PLEX_CONTAINER'"
+ssh "$PLEX_SSH" "podman exec '$PLEX_CONTAINER' find /usr/lib/plexmediaserver -path '*WebClient.bundle/Contents/Resources/index.html'"
 ssh "$PLEX_SSH" "systemctl cat '$PLEX_UNIT' | grep -n -E 'podman run|--read-only|--rm|image|localhost/'"
 ```
 
-Expected: one container; `readonly=true rm=true`; exactly one path,
+Expected: one container (its name goes into `.env` as `PLEX_CONTAINER`
+before the next two commands); `readonly=true rm=true`; exactly one path,
 `/usr/lib/plexmediaserver/Resources/Plug-ins-<build>/WebClient.bundle/Contents/Resources/index.html`;
 the unit's `podman run` line ends with the image reference. Put the
 `image=` value in `.env` as `PLEX_IMAGE`, the unit name as `PLEX_UNIT`,
