@@ -2,6 +2,41 @@
 # Repo rule: run gitleaks and the test suite before every commit; never commit red.
 set -eu
 
+# Minimum Node, same as "engines" in package.json (a unit test keeps them equal).
+NODE_MIN_MAJOR=22
+NODE_MIN_MINOR=12
+
+node_ok() {
+  command -v node >/dev/null 2>&1 || return 1
+  v=$(node --version 2>/dev/null) || return 1
+  v=${v#v}
+  major=${v%%.*}
+  rest=${v#*.}
+  minor=${rest%%.*}
+  [ "$major" -gt "$NODE_MIN_MAJOR" ] || { [ "$major" -eq "$NODE_MIN_MAJOR" ] && [ "$minor" -ge "$NODE_MIN_MINOR" ]; }
+}
+
+# GUI git clients (e.g. an editor's git panel) often run hooks without the
+# shell setup that puts nvm's Node on PATH. Load nvm only when needed, so a
+# Node from another version manager is left alone.
+# nvm needs NVM_DIR exported when sourced from a non-bash sh (it cannot find
+# its own directory there), exactly as its installer's shell snippet does.
+if ! node_ok; then
+  NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+  if [ -s "$NVM_DIR/nvm.sh" ]; then
+    export NVM_DIR
+    set +eu
+    . "$NVM_DIR/nvm.sh" >/dev/null 2>&1
+    set -eu
+  fi
+fi
+if ! node_ok; then
+  echo "pre-commit: Node >= $NODE_MIN_MAJOR.$NODE_MIN_MINOR is required (found: $(node --version 2>/dev/null || echo none))." >&2
+  echo "pre-commit: install it (e.g. nvm install $NODE_MIN_MAJOR) and retry." >&2
+  exit 1
+fi
+echo "pre-commit: node $(node --version) ($(command -v node))"
+
 if ! command -v gitleaks >/dev/null 2>&1; then
   echo "pre-commit: gitleaks is not on PATH. Install it (see CLAUDE.md) and retry." >&2
   exit 1

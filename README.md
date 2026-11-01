@@ -30,7 +30,10 @@ Everything Plex-specific sits in one file per mod
 
 ## Usage
 
-Requirements: Node ≥ 22.12, and for development, gitleaks.
+Requirements: Node ≥ 22.12, and for development, gitleaks. `npm ci` installs
+the pre-commit hook (gitleaks, lint, tests). When the `node` on PATH is
+missing or too old, as in some editors' git panels, the hook loads
+`$NVM_DIR/nvm.sh` (default `~/.nvm`) itself.
 
 ```sh
 npm ci && npm run build
@@ -85,7 +88,7 @@ auto). `--no-banner` keeps failures in the console only. In the browser,
 
 ## STATUS
 
-_Last updated: 2026-10-31 (session 4)._
+_Last updated: 2026-11-01 (session 5)._
 
 **"Play from here" works end to end against a real Plex Media Server.**
 Tested on PMS 1.43.5.11079 with its bundled Plex Web 4.162.1, in a
@@ -135,7 +138,7 @@ Node 24 actions, with no Node 20 deprecation warning.
 - **PMS API:** a sorted section or season `uri` plus `key` yields the visible
   order from the clicked item on; filters are honoured. Plex Web's own
   library Play button sends the same `uri` without `key`.
-- **Tooling:** 224 unit tests. CI on GitHub-hosted runners runs gitleaks,
+- **Tooling:** 233 unit tests. CI on GitHub-hosted runners runs gitleaks,
   lint, tests, the build and the sandbox e2e, using Node 24 actions
   (`actions/checkout@v7`, `actions/setup-node@v7`, `actions/cache@v6`). The
   PMS package is cached by release version; no secrets are used.
