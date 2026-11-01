@@ -212,8 +212,12 @@ same PMS release: it is flaky (BACKLOG B11).
 The weekly breakage canary (B8) is designed but not built.
 
 **Next:** BACKLOG.md B1 → B2 → B4 → B5 (B3 is already done offline for
-PMS 1.43.4.10903). Optional: B6 (rebuild after Plex updates), B8 (weekly
-canary).
+PMS 1.43.4.10903). The workstation's curl and Node do not trust the root at
+the top of the server's plex.direct chain yet (Let's Encrypt
+`ISRG Root YR`), so for now the curl checks use `-k` and the e2e
+`PLEX_E2E_IGNORE_TLS=1` (BACKLOG B1 note). Optional: B6 (rebuild after
+Plex updates), B8 (weekly canary), B12 (trust that chain on the
+workstation).
 
 ## License
 

@@ -36,7 +36,7 @@ Conventions:
   gitignored `local/`, never in this file.
 - Record results in `docs/anchor-research.md` (findings log) using
   placeholders for ids, hostnames and library names. Anchor strings only.
-- Order: B0 → B1 → B2 → B3 → B4 → B5. B6–B11 are optional.
+- Order: B0 → B1 → B2 → B3 → B4 → B5. B6–B12 are optional.
 - **Merge plan (owner, 2026-11-01):** after B5 passes, the owner
   squash-merges `claude/plex-play-from-here-rzg61g` into `main` and deletes
   the branch. No history rewrite before that; sessions keep pushing to the
@@ -90,7 +90,7 @@ and choose `PLEX_MODS_IMAGE` (same name plus `-mods`, same tag) and
 ```sh
 openssl s_client -connect <plex-ip>:32400 </dev/null 2>/dev/null | openssl x509 -noout -ext subjectAltName
 # DNS:*.<server-hash>.plex.direct  ->  PLEX_URL=https://<a-b-c-d>.<server-hash>.plex.direct:32400
-curl -sI "$PLEX_URL/web/index.html" | grep -i -E '^(HTTP|content-security-policy|cache-control)'
+curl -sSI "$PLEX_URL/web/index.html" | grep -i -E '^(HTTP|content-security-policy|cache-control)'
 ```
 
 Expected: `HTTP/1.1 200 OK`, `Cache-Control: no-cache`, and **no**
@@ -99,6 +99,17 @@ runtime needs `script-src 'self' 'unsafe-eval'` (no inline script). The
 `*.plex.direct` name must resolve on your LAN (a DNS rebinding exception
 for `plex.direct`); gitleaks blocks these names in commits, so keep them
 in `.env`.
+
+**If curl says `SSL certificate problem: unable to get local issuer
+certificate`**, your workstation does not trust the root at the top of the
+server's certificate chain, although browsers do. Seen 2026-11-01: the
+plex.direct certificate is issued by Let's Encrypt `YR2`, which chains to
+the new `ISRG Root YR`; neither Ubuntu 22.04's `ca-certificates`
+20260601 nor Node 22's built-in list had it yet. Nothing is wrong on the
+server. For now, skip verification: add `-k` to the curl commands in
+B1, B2 and B4, set `PLEX_E2E_IGNORE_TLS=1` in `.env` (the e2e's browser
+and API calls), and run `--verify-served` (B5) with
+`NODE_TLS_REJECT_UNAUTHORIZED=0` in front. B12 restores verification.
 
 Other installs: a **writable** container (`readonly=false`, no `--rm`)
 can use the injector in place (`PLEX_INSTALL_TYPE=podman` or `docker`,
@@ -111,7 +122,7 @@ container.
 ## B2. PMS version: is an update needed first?
 
 ```sh
-curl -s -H 'Accept: application/json' "$PLEX_URL/identity" | node -pe 'JSON.parse(require("fs").readFileSync(0)).MediaContainer.version'
+curl -sS -H 'Accept: application/json' "$PLEX_URL/identity" | node -pe 'JSON.parse(require("fs").readFileSync(0)).MediaContainer.version'
 ```
 
 Expected: `1.43.4.10903-e5521bd8c` or later. Preflight is green (offline)
@@ -160,12 +171,15 @@ browser storage (`e2e/auth.ts`, key `myPlexAccessToken`, the one remaining
 unverified e2e assumption).
 
 ```sh
-curl -s -o /dev/null -w '%{http_code}\n' -H "X-Plex-Token: $PLEX_TOKEN" "$PLEX_URL/library/sections"   # expect 200
-curl -s -H 'Accept: application/json' -H "X-Plex-Token: $PLEX_TOKEN" "$PLEX_URL/library/sections" \
+curl -sS -o /dev/null -w '%{http_code}\n' -H "X-Plex-Token: $PLEX_TOKEN" "$PLEX_URL/library/sections"   # expect 200
+curl -sS -H 'Accept: application/json' -H "X-Plex-Token: $PLEX_TOKEN" "$PLEX_URL/library/sections" \
   | node -pe 'JSON.parse(require("fs").readFileSync(0)).MediaContainer.Directory.map(d=>d.key+" "+d.type).join("\n")'   # ids + types, for .env
 npx playwright install chromium        # once; add --with-deps (sudo) if Chromium lacks system libraries
 npm run build && npx playwright test
 ```
+
+Certificate errors: see the note at the end of B1 (`-k`,
+`PLEX_E2E_IGNORE_TLS=1`).
 
 Get the token from a signed-in Plex Web (open any item, "..." > Get Info >
 View XML: the opened URL ends in `X-Plex-Token=<token>`; or DevTools >
@@ -268,6 +282,10 @@ the token, the plex.direct hash and 40-hex ids:
    PLEX_E2E_INJECT=server npx playwright test
    ```
 
+   Certificate errors (B1 note): `NODE_TLS_REJECT_UNAUTHORIZED=0
+   ./injector/reapply.sh --verify-served` (Node prints a warning), and
+   keep `PLEX_E2E_IGNORE_TLS=1` for the e2e.
+
    Expected: `HTTP verify: index.html served with the new tag
    (Cache-Control: no-cache)`, `HTTP verify: runtime served and matches the
    build`, `the served Plex Web carries this build`; the e2e gives the same
@@ -351,7 +369,7 @@ Design (build it as `.github/workflows/canary.yml`; GitHub-hosted runners, no se
     need a token, so they are out of scope by design).
   - Bundled Plex Web: after extraction,
     `ls "$PLEX_WEB_DIR"/js | grep -o 'plex-[0-9.]*-[0-9a-f]*' | sort -u`.
-  - Hosted Plex Web: `curl -s https://app.plex.tv/desktop/index.html | grep -o 'plex-[0-9.]*-[0-9a-f]*' | sort -u`.
+  - Hosted Plex Web: `curl -sS https://app.plex.tv/desktop/index.html | grep -o 'plex-[0-9.]*-[0-9a-f]*' | sort -u`.
   - "New since last week": restore `canary-state/versions.json` with
     `actions/cache` (key `canary-state-${{ github.run_id }}`, restore-keys
     `canary-state-`), diff, and save the new file at the end; the diff only
@@ -433,3 +451,66 @@ wait or assertion in `e2e/` (likely a timing window, e.g. autoplay or the
 player starting), then re-run the job a few times (`gh run rerun <id>
 --job <job id>`) to confirm.
 
+
+## B12. (optional) Trust the server's certificate chain on the workstation
+
+Only when B1's certificate note applies. Workstation only; the server is
+not touched. Goal: drop `-k`, `PLEX_E2E_IGNORE_TLS` and
+`NODE_TLS_REJECT_UNAUTHORIZED` again, so the token only goes to a server
+whose certificate checks out.
+
+1. Maybe updates fixed it already (`sudo apt upgrade`, a newer Node 22):
+
+   ```sh
+   curl -sS -o /dev/null -w 'curl: %{http_code}\n' "$PLEX_URL/identity"
+   node -e 'fetch(process.env.PLEX_URL + "/identity").then(r => console.log("node:", r.status), e => console.log("node:", e.cause?.code ?? e.message))'
+   ```
+
+   Both `200`: go to step 4.
+
+2. Fetch the missing CA certificate from the URL named by the top of the
+   chain (its "CA Issuers" entry), into the gitignored `local/`:
+
+   ```sh
+   mkdir -p local/tls
+   openssl s_client -connect "${PLEX_URL#https://}" -showcerts </dev/null 2>/dev/null \
+     | awk '/-----BEGIN CERTIFICATE-----/{p=1; c=""} p{c=c $0 "\n"} /-----END CERTIFICATE-----/{p=0; last=c} END{printf "%s", last}' > local/tls/top.pem
+   U=$(openssl x509 -in local/tls/top.pem -noout -ext authorityInfoAccess | sed -n 's/.*CA Issuers - URI://p'); echo "$U"
+   curl -fsS "$U" -o local/tls/ca.der && openssl x509 -inform DER -in local/tls/ca.der -out local/tls/ca.pem
+   openssl x509 -in local/tls/ca.pem -noout -subject -issuer -fingerprint -sha256
+   ```
+
+   Expected: a CA URL (`http://…lencr.org/` for a Let's Encrypt chain),
+   then a subject equal to the issuer at the top of the chain (e.g.
+   `ISRG Root YR`). If `openssl` can't load `ca.der`, the file is PEM:
+   `cp local/tls/ca.der local/tls/ca.pem`. **Compare the SHA-256
+   fingerprint with the one listed for that certificate on
+   <https://letsencrypt.org/certificates/>** (the download is plain HTTP;
+   the fingerprint makes it trustworthy). Stop if it does not match.
+
+3. Point curl and Node at it from `.env` (Debian/Ubuntu bundle path):
+
+   ```sh
+   cat /etc/ssl/certs/ca-certificates.crt local/tls/ca.pem > local/tls/curl-bundle.pem
+   printf '%s\n' "CURL_CA_BUNDLE=$PWD/local/tls/curl-bundle.pem" "NODE_EXTRA_CA_CERTS=$PWD/local/tls/ca.pem" >> .env
+   sed -i '/^PLEX_E2E_IGNORE_TLS=/d' .env && unset PLEX_E2E_IGNORE_TLS
+   set -a; . ./.env; set +a
+   ```
+
+   Re-run the `cat` after a `ca-certificates` update.
+
+4. Check without the workarounds:
+
+   ```sh
+   curl -sS -o /dev/null -w 'curl: %{http_code}\n' "$PLEX_URL/identity"   # expect curl: 200
+   node -e 'fetch(process.env.PLEX_URL + "/identity").then(r => console.log("node:", r.status), e => console.log("node:", e.cause?.code ?? e.message))'   # expect node: 200
+   npx playwright test   # expect the B4 result
+   ```
+
+   If only Chromium fails (`net::ERR_CERT_AUTHORITY_INVALID`), add the
+   certificate to your user NSS store, which Chromium on Linux reads:
+   `sudo apt install libnss3-tools`, then
+   `certutil -d sql:$HOME/.pki/nssdb -A -t C,, -n plex-chain-ca -i local/tls/ca.pem`.
+   Then stop using `-k` and the `NODE_TLS_REJECT_UNAUTHORIZED=0` prefix.
+   Once your distribution and Node ship the root (step 1 passes without
+   them), remove the two `.env` lines and `certutil -d sql:$HOME/.pki/nssdb -D -n plex-chain-ca`.
