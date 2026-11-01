@@ -3,7 +3,7 @@
 // client runs it without the user's shell setup.
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -107,12 +107,16 @@ describe(".githooks/pre-commit Node resolution", () => {
 const gitDir = (process.env.PATH ?? "").split(":").find((d) => d && existsSync(join(d, "git")))!;
 
 describe(".githooks/pre-commit local/ guard", () => {
-  function repoWith(stage: (git: (...args: string[]) => void, write: (p: string, body: string) => void) => void) {
+  // Hooks run with git's exec path first on PATH; give the hook the usual tools too.
+  function repoWith(
+    stage: (git: (...args: string[]) => void, write: (p: string, body: string) => void) => void,
+    toolPath = `${gitDir}:/usr/bin:/bin`,
+  ) {
     const repo = mkdtempSync(join(tmpdir(), "pre-commit-local-"));
     const log = join(repo, "..", `${repo.split("/").pop()}.log`);
     const bin = fakeBin(join(repo, "..", `${repo.split("/").pop()}-bin`), "ok", "v22.23.4");
     rmSync(join(bin, "git")); // the guard needs the real git here
-    const env = { HOME: repo, PATH: `${bin}:${gitDir}`, HOOK_LOG: log, GIT_CONFIG_NOSYSTEM: "1" };
+    const env = { HOME: repo, PATH: `${bin}:${toolPath}`, HOOK_LOG: log, GIT_CONFIG_NOSYSTEM: "1" };
     const git = (...args: string[]) => {
       const r = spawnSync("git", args, { cwd: repo, env, encoding: "utf8" });
       if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
@@ -131,13 +135,13 @@ describe(".githooks/pre-commit local/ guard", () => {
 
   it("refuses force-added files under local/, empty ones included, before running anything else", () => {
     const r = repoWith((git, write) => {
-      write("local/metalshop-notes.md", "notes\n");
+      write("local/server-notes.md", "notes\n");
       write("local/tools/empty.ts", "");
       git("add", "-f", "local/");
     });
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("refusing to commit files under local/");
-    expect(r.stderr).toContain("local/metalshop-notes.md\nlocal/tools/empty.ts\n");
+    expect(r.stderr).toContain("local/server-notes.md\nlocal/tools/empty.ts\n");
     expect(r.calls).toEqual([]);
   });
 
@@ -149,6 +153,45 @@ describe(".githooks/pre-commit local/ guard", () => {
     });
     expect(r.status, r.stderr).toBe(0);
     expect(r.calls).toEqual(["ok-gitleaks git", "ok-npm run --silent lint", "ok-npm test --silent"]);
+  });
+
+  it("refuses staged lines or paths containing a word from the private local/denylist.txt, ignoring case", () => {
+    for (const [file, body] of [
+      ["docs/notes.md", "deploy to MyHost-01 first\n"],
+      ["docs/myhost-01-notes.md", "harmless\n"],
+    ]) {
+      const r = repoWith((git, write) => {
+        write("local/denylist.txt", "# private words\n\nmyhost-01\nother-name\n");
+        write(file!, body!);
+        git("add", ".");
+      });
+      expect(r.status, file).toBe(1);
+      expect(r.stderr).toContain("contain words from local/denylist.txt: myhost-01");
+      expect(r.stderr).not.toContain("other-name");
+      expect(r.calls).toEqual([]);
+    }
+  });
+
+  it("fails closed when grep is missing while a denylist exists", () => {
+    const gitOnly = mkdtempSync(join(tmpdir(), "git-only-"));
+    symlinkSync(join(gitDir, "git"), join(gitOnly, "git"));
+    const r = repoWith((git, write) => {
+      write("local/denylist.txt", "myhost-01\n");
+      write("docs/notes.md", "deploy to myhost-01\n");
+      git("add", ".");
+    }, gitOnly);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("grep is required to check local/denylist.txt");
+    expect(r.calls).toEqual([]);
+  });
+
+  it("ignores comments and blank lines in the denylist (they must not match everything)", () => {
+    const r = repoWith((git, write) => {
+      write("local/denylist.txt", "# comment\n\nmyhost-01");
+      write("docs/notes.md", "nothing private here\n");
+      git("add", ".");
+    });
+    expect(r.status, r.stderr).toBe(0);
   });
 
   it("allows deleting a file under local/ (cleaning up a past mistake)", () => {

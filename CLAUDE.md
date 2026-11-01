@@ -20,7 +20,10 @@ every PMS update. Read this file fully before changing anything.
    Owner- and homelab-specific material (server notes, copies of container
    definitions, research helpers that print bundle code) lives only in the
    gitignored `local/`. The pre-commit hook and a gitleaks rule refuse any
-   path under `local/`, even when force-added.
+   path under `local/`, even when force-added. The hook also refuses staged
+   paths or added lines containing any word from the private
+   `local/denylist.txt` (the owner's hostnames, names, paths; one per line).
+   Use generic placeholders even in test fixtures.
 2. **All configuration comes from environment variables.** Only
    `.env.example` (placeholders only) is committed. Real values go in a local
    `.env`, which is gitignored. Tests and fixtures use obvious placeholders

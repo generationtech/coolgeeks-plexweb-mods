@@ -60,8 +60,8 @@ describe(".gitignore", () => {
     "bundle-snapshots/web/index.html",
     "node_modules/x/index.js",
     "dist/plexweb-mods.js",
-    "local/metalshop-plex.md",
-    "local/metalshop-plex/plex.container",
+    "local/server-plex.md",
+    "local/server-plex/plex.container",
     "local/tools/peek.cjs",
   ])("ignores %s", (p) => {
     expect(ignored(p)).toBe(true);

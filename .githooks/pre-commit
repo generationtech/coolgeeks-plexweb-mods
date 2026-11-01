@@ -13,6 +13,33 @@ if [ -n "$local_paths" ]; then
   exit 1
 fi
 
+# Owner-defined private words (hostnames, image names, paths) live in the
+# gitignored local/denylist.txt, one per line, no surrounding spaces; lines
+# starting with # are comments. Refuse staged paths or added lines that
+# contain any of them, ignoring case.
+if [ -s local/denylist.txt ]; then
+  # Fail closed: a missing or failing grep must block, never pass silently.
+  command -v grep >/dev/null 2>&1 || { echo "pre-commit: grep is required to check local/denylist.txt" >&2; exit 1; }
+  names=$(git diff --cached --name-only --diff-filter=d)
+  lines=$(git diff --cached -U0 --no-color | awk '/^\+/ && !/^\+\+\+ /')
+  found=""
+  while IFS= read -r word || [ -n "$word" ]; do
+    case "$word" in '' | '#'*) continue ;; esac
+    rc=0
+    printf '%s\n%s\n' "$names" "$lines" | grep -i -F -q -- "$word" || rc=$?
+    case "$rc" in
+      0) found="$found $word" ;;
+      1) ;;
+      *) echo "pre-commit: grep failed (exit $rc) while checking local/denylist.txt" >&2; exit 1 ;;
+    esac
+  done < local/denylist.txt
+  if [ -n "$found" ]; then
+    echo "pre-commit: staged changes contain words from local/denylist.txt:$found" >&2
+    echo "pre-commit: replace them with placeholders (CLAUDE.md rule 1)" >&2
+    exit 1
+  fi
+fi
+
 # Minimum Node, same as "engines" in package.json (a unit test keeps them equal).
 NODE_MIN_MAJOR=22
 NODE_MIN_MINOR=12

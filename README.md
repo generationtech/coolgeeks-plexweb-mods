@@ -119,7 +119,7 @@ auto). `--no-banner` keeps failures in the console only. In the browser,
 | `e2e/` | Playwright e2e (token auth injected into storage; never a stored login) |
 | `docs/anchor-research.md` | anchor findings (anchor strings only) |
 | `research/sandbox-probes/` | the one-off sandbox scripts behind those findings (historical; e2e supersedes them) |
-| `local/` | gitignored owner-only notes and tools (homelab specifics); the hook and gitleaks refuse it even with `git add -f` |
+| `local/` | gitignored owner-only notes and tools (homelab specifics); the hook and gitleaks refuse it even with `git add -f`; the hook also refuses words listed in `local/denylist.txt` |
 | `BACKLOG.md` | everything that needs the real server, with exact commands |
 | `CLAUDE.md` | standing rules for this public repo |
 
@@ -180,7 +180,8 @@ same PMS release: it is flaky (BACKLOG B11).
 - **Workstation development:** the pre-commit hook loads nvm's Node when a
   GUI git client runs it without Node 22 on PATH. Owner-only notes live in
   the gitignored `local/`; the hook and a gitleaks rule refuse it even when
-  force-added.
+  force-added, and the hook refuses any word from the private
+  `local/denylist.txt` in staged changes.
 - **Container installs:** the injector works in place in writable Docker or
   Podman containers. It refuses read-only ones up front, pointing to the
   **derived image** (`image/`): your Plex image plus one layer with
@@ -192,7 +193,7 @@ same PMS release: it is flaky (BACKLOG B11).
 - **PMS API:** a sorted section or season `uri` plus `key` yields the visible
   order from the clicked item on; filters are honoured. Plex Web's own
   library Play button sends the same `uri` without `key`.
-- **Tooling:** 267 unit tests. CI on GitHub-hosted runners runs gitleaks,
+- **Tooling:** 270 unit tests. CI on GitHub-hosted runners runs gitleaks,
   lint, tests, the build, the sandbox e2e, and a real podman build of the
   derived image against synthetic Plex bases (one must pass, one must fail
   on preflight; `scripts/ci/image-smoke.sh`), using Node 24 actions
