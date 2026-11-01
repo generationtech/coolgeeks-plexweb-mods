@@ -4,7 +4,7 @@ import globals from "globals";
 
 export default tseslint.config(
   {
-    ignores: ["dist/", "node_modules/", "bundle-snapshots/", "test/fixtures/", "test-results/", "playwright-report/"],
+    ignores: ["dist/", "node_modules/", "bundle-snapshots/", "local/", "test/fixtures/", "test-results/", "playwright-report/"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
