@@ -151,8 +151,11 @@ clean. They pass with the runtime injected by request interception and
 with it applied by the injector, on either native player path; test 6 runs
 in interception mode only. CI runs the suite against a fresh sandbox on
 every push, in all three modes (interception on the auto path, interception
-with the fallback forced, injector-applied); all jobs are green on the
-Node 24 actions, with no Node 20 deprecation warning.
+with the fallback forced, injector-applied). The latest full run
+(2026-11-01, commit `4df72d6`) is green in every job on the Node 24
+actions. The sandbox e2e failed twice in session 5, at different steps,
+once on the commit the session started from, and passed again with the
+same PMS release: it is flaky (BACKLOG B11).
 
 - **Native player, two paths** (group `play-from-here/player`; preflight and
   the runtime print which is active):

@@ -36,7 +36,7 @@ Conventions:
   gitignored `local/`, never in this file.
 - Record results in `docs/anchor-research.md` (findings log) using
   placeholders for ids, hostnames and library names. Anchor strings only.
-- Order: B0 → B1 → B2 → B3 → B4 → B5. B6–B10 are optional.
+- Order: B0 → B1 → B2 → B3 → B4 → B5. B6–B11 are optional.
 
 ---
 
@@ -382,3 +382,23 @@ after approval; PRs from forks never reach the runner.
 - Localized UIs: `dom.menuAnchorLabels` holds English labels. Plex Web ships
   `translations/<lang>.json` (English source string → translation), so the
   runtime could load the active language's labels instead.
+
+## B11. (optional) Find the flaky sandbox e2e step
+
+Needs read access to the repo's Actions logs (anonymous API calls get 403
+for job logs). In session 5 the CI e2e job failed twice with PMS
+1.43.5.11079 unchanged, then passed: run `41325151719` on commit `0cb2dc9`
+("e2e, runtime injected by interception (fallback player forced)") and run
+`41329272814` on `81c309a` ("e2e against an injector-applied install");
+the same injector calls pass locally against real Plex Web.
+
+```sh
+gh run view 41329272814 --log-failed | grep -E -B2 -A20 '✘|Error|Timeout|expect\('
+gh run list --branch claude/plex-play-from-here-rzg61g --limit 20 --json conclusion,headSha,databaseId
+```
+
+Expected: the failing test name and its assertion or timeout. Fix the
+wait or assertion in `e2e/` (likely a timing window, e.g. autoplay or the
+player starting), then re-run the job a few times (`gh run rerun <id>
+--job <job id>`) to confirm.
+
