@@ -14,7 +14,8 @@ export const BACKUP_SUFFIX = ".plexweb-mods.orig";
 /** Service-worker filenames that would serve a stale index.html (cache-busting check). */
 export const SERVICE_WORKER_CANDIDATES = ["sw.js", "service-worker.js", "serviceworker.js"];
 
-export type Mode = "apply" | "uninstall" | "status" | "snapshot";
+/** verify: HTTP-only check of what PMS serves against the local build; touches no filesystem (image installs). */
+export type Mode = "apply" | "uninstall" | "status" | "snapshot" | "verify";
 
 export interface ReapplyOptions {
   fs: TargetFs;
@@ -103,6 +104,14 @@ export async function reapply(o: ReapplyOptions): Promise<ReapplyResult> {
 }
 
 async function run(o: ReapplyOptions, say: (s: string) => void, messages: string[]): Promise<ReapplyResult> {
+  if (o.mode === "verify") {
+    if (!o.verifyUrl) throw new ReapplyError("verify needs PLEX_URL");
+    const version = contentVersion(readRuntime(o.runtimePath));
+    say(`checking what ${o.verifyUrl} serves against the local build (runtime version ${version})`);
+    await verifyHttp(o, version, say);
+    say("the served Plex Web carries this build");
+    return { exitCode: 0, changed: false, messages };
+  }
   const dry = o.dryRun ? "[dry-run] " : "";
   say(`target: ${o.fs.describe()} (${o.installType})`);
   const webDir = await resolveWebDir(o, say);
@@ -170,12 +179,7 @@ async function run(o: ReapplyOptions, say: (s: string) => void, messages: string
   }
 
   // ---- apply ----------------------------------------------------------------
-  let runtime: Buffer;
-  try {
-    runtime = readFileSync(o.runtimePath);
-  } catch {
-    throw new ReapplyError(`runtime not built: ${o.runtimePath} (run npm run build)`);
-  }
+  const runtime = readRuntime(o.runtimePath);
   const version = contentVersion(runtime);
   say(`runtime ${o.runtimePath} (version ${version})`);
 
@@ -266,6 +270,14 @@ async function run(o: ReapplyOptions, say: (s: string) => void, messages: string
         : "already applied and up to date; nothing changed",
   );
   return { exitCode: 0, webDir, changed, messages };
+}
+
+function readRuntime(path: string): Buffer {
+  try {
+    return readFileSync(path);
+  } catch {
+    throw new ReapplyError(`runtime not built: ${path} (run npm run build)`);
+  }
 }
 
 /** Where to send people whose container cannot be changed in place. */

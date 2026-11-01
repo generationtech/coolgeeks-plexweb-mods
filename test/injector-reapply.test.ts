@@ -150,6 +150,25 @@ describe("reapply on a local Linux-style install", () => {
     expect(text).toMatch(/HTTP verify: index.html served with the new tag \(Cache-Control: no-cache\)/);
     expect(text).toMatch(/HTTP verify: runtime served and matches the build/);
   });
+
+  it("--verify-served checks over HTTP only, never touching a filesystem", async () => {
+    const { webDir, runtimePath } = fakeInstall();
+    await reapply(opts({ fs: new LocalFs(), runtimePath, webDir }));
+    const served = (path: string) => readFileSync(join(webDir, path.replace(/^\/web\//, "")), "utf8");
+    const fetchImpl = async (url: string) => {
+      const body = served(new URL(url).pathname);
+      return { ok: true, status: 200, text: async () => body, headers: { get: () => "no-cache" } };
+    };
+    const noFs = new Proxy({} as LocalFs, { get: (_, k) => () => Promise.reject(new Error(`fs.${String(k)} called`)) });
+    const ok = await reapply(opts({ fs: noFs, runtimePath, mode: "verify", verifyUrl: "https://plex-server.example:32400", fetchImpl }));
+    expect(ok.exitCode, ok.messages.join("\n")).toBe(0);
+    expect(ok.messages.join("\n")).toMatch(/runtime served and matches the build[\s\S]*the served Plex Web carries this build/);
+
+    writeFileSync(runtimePath, "/* fake runtime v2, not deployed */");
+    const stale = await reapply(opts({ fs: noFs, runtimePath, mode: "verify", verifyUrl: "https://plex-server.example:32400", fetchImpl }));
+    expect(stale.exitCode).toBe(1);
+    expect(stale.messages.at(-1)).toMatch(/does not reference plexweb-mods\.js\?v=/);
+  });
 });
 
 /**
@@ -360,6 +379,7 @@ describe("CLI and shell wrapper", () => {
     expect(cli(["--bogus"]).status).toBe(2);
     expect(cli([], { PLEX_INSTALL_TYPE: "windows" }).status).toBe(2);
     expect(cli(["--verify"], { PLEX_WEB_DIR: "/x" }).status).toBe(2);
+    expect(cli(["--verify-served"]).status).toBe(2);
     expect(cli(["--help"]).stdout).toMatch(/usage: reapply.sh/);
   });
 

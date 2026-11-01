@@ -45,6 +45,7 @@ cp .env.example .env                    # fill in; never commit .env
 ./injector/reapply.sh --dry-run         # preflight + diff, writes nothing
 ./injector/reapply.sh                   # apply (idempotent; refuses if preflight fails)
 ./injector/reapply.sh --uninstall       # byte-identical restore
+./injector/reapply.sh --verify-served   # HTTP only: does PMS serve this build? (any install type)
 ```
 
 Linux package installs usually need root to write the Plex Web directory:
@@ -71,6 +72,8 @@ npm run build                      # also writes the build context dist/image/
   --node-image docker.io/library/node:22-bookworm-slim@sha256:<digest> \
   --tag <your plex image name>-mods:<version>
 # point the container definition at the new tag; restart
+# back on the workstation (needs PLEX_URL; reads nothing but HTTP):
+./injector/reapply.sh --verify-served
 ```
 
 A throwaway Node stage runs the injector, preflight included, against the
@@ -172,7 +175,7 @@ Node 24 actions, with no Node 20 deprecation warning.
 - **PMS API:** a sorted section or season `uri` plus `key` yields the visible
   order from the clicked item on; filters are honoured. Plex Web's own
   library Play button sends the same `uri` without `key`.
-- **Tooling:** 266 unit tests. CI on GitHub-hosted runners runs gitleaks,
+- **Tooling:** 267 unit tests. CI on GitHub-hosted runners runs gitleaks,
   lint, tests, the build and the sandbox e2e, using Node 24 actions
   (`actions/checkout@v7`, `actions/setup-node@v7`, `actions/cache@v6`). The
   PMS package is cached by release version; no secrets are used.

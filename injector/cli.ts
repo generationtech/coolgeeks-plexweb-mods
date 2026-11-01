@@ -5,6 +5,7 @@
  *   reapply.sh --dry-run       show what would change, change nothing
  *   reapply.sh --uninstall     remove the injection and the runtime file
  *   reapply.sh --status        show the current state
+ *   reapply.sh --verify-served check over HTTP that PMS serves this build (no file access)
  *
  * Config (env, see .env.example): PLEX_INSTALL_TYPE (linux|docker|podman), PLEX_WEB_DIR,
  * PLEX_CONTAINER (alias: PLEX_DOCKER_CONTAINER), PLEX_URL (only for --verify).
@@ -28,6 +29,7 @@ options:
   --skip-preflight     do not run the anchor preflight before applying
   --no-banner          never show the on-page failure banner (console only)
   --verify             after applying, fetch PLEX_URL/web/index.html and the runtime over HTTP
+  --verify-served      only that HTTP check, touching no files (e.g. for a derived image); needs PLEX_URL
   --opt key=value      plugin option, e.g. --opt pfh-companion=off (repeatable)
   --install-type T     linux | docker | podman   (env PLEX_INSTALL_TYPE, default linux)
   --web-dir DIR        Plex Web dir with index.html (env PLEX_WEB_DIR; auto-discovered if unset)
@@ -72,6 +74,10 @@ async function main() {
     else if (a === "--skip-preflight") skipPreflight = true;
     else if (a === "--no-banner") banner = false;
     else if (a === "--verify") verify = true;
+    else if (a === "--verify-served") {
+      mode = "verify";
+      verify = true;
+    }
     else if (a === "--opt") {
       const kv = val();
       const eq = kv.indexOf("=");
