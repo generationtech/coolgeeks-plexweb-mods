@@ -28,7 +28,9 @@ export class PlexApi {
   /**
    * Rating keys of a whole section listing, in server order, for the given
    * listing params. Pages through it: a real library can be far larger than
-   * one page, and "Play from here" queues all of it.
+   * one page, and "Play from here" queues all of it. Trusts totalSize when PMS
+   * reports it (a page may come back shorter than asked); otherwise stops at a
+   * short page.
    */
   async listingKeys(sectionId: string, params: URLSearchParams, pageSize = 1000, maxItems = 100_000): Promise<string[]> {
     const q = sanitizeListingParams(params);
@@ -39,8 +41,9 @@ export class PlexApi {
       const mc = (await this.json(`${this.baseUrl}/library/sections/${sectionId}/all?${serializeQuery(q, true)}`)).MediaContainer;
       const page: string[] = (mc.Metadata ?? []).map((m: any) => String(m.ratingKey));
       keys.push(...page);
-      const total = Number(mc.totalSize);
-      if (page.length < pageSize || (Number.isFinite(total) && keys.length >= total)) break;
+      const total = mc.totalSize === undefined ? NaN : Number(mc.totalSize);
+      if (page.length === 0) break;
+      if (Number.isFinite(total) ? keys.length >= total : page.length < pageSize) break;
     }
     return keys;
   }

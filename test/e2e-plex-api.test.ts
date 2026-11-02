@@ -2,8 +2,11 @@
 import { describe, expect, it } from "vitest";
 import { PlexApi } from "../e2e/plex-api";
 
-/** A fake PMS section listing of `total` items; reports totalSize unless told not to. */
-function fakeListing(total: number, opts: { totalSize?: boolean } = {}) {
+/**
+ * A fake PMS section listing of `total` items; reports totalSize unless told
+ * not to, and returns at most `maxPage` items per request when set.
+ */
+function fakeListing(total: number, opts: { totalSize?: boolean; maxPage?: number } = {}) {
   const urls: URL[] = [];
   const request = {
     async get(url: string, init: { headers: Record<string, string> }) {
@@ -11,7 +14,7 @@ function fakeListing(total: number, opts: { totalSize?: boolean } = {}) {
       urls.push(u);
       expect(init.headers["X-Plex-Token"]).toBe("test-token");
       const start = Number(u.searchParams.get("X-Plex-Container-Start"));
-      const size = Number(u.searchParams.get("X-Plex-Container-Size"));
+      const size = Math.min(Number(u.searchParams.get("X-Plex-Container-Size")), opts.maxPage ?? Infinity);
       const keys = Array.from({ length: Math.max(0, Math.min(size, total - start)) }, (_, i) => ({ ratingKey: start + i + 1 }));
       const mc: Record<string, unknown> = { size: keys.length, Metadata: keys };
       if (opts.totalSize !== false) mc.totalSize = total;
@@ -30,6 +33,12 @@ describe("PlexApi.listingKeys", () => {
     expect(keys).toEqual(expected(2641));
     expect(urls.map((u) => u.searchParams.get("X-Plex-Container-Start"))).toEqual(["0", "1000", "2000"]);
     expect(urls.every((u) => u.pathname === "/library/sections/5/all" && u.searchParams.get("sort") === "addedAt:desc")).toBe(true);
+  });
+
+  it("keeps paging when PMS returns shorter pages than asked but totalSize says there is more", async () => {
+    const { api, urls } = fakeListing(2641, { maxPage: 500 });
+    expect(await api.listingKeys("5", new URLSearchParams("sort=addedAt:desc"))).toEqual(expected(2641));
+    expect(urls.map((u) => u.searchParams.get("X-Plex-Container-Start"))).toEqual(["0", "500", "1000", "1500", "2000", "2500"]);
   });
 
   it("stops at a short page when PMS reports no totalSize", async () => {
