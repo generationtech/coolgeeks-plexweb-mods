@@ -3,7 +3,7 @@ import type { ListingContext, PlexBindings, ServerContext } from "../patches/pla
 import { createDefaultBindings, parseRoute } from "../patches/play-from-here/default-bindings";
 import { PlayFromHereError, runPlayFromHere } from "../patches/play-from-here/flow";
 import { ListingTracker } from "../patches/play-from-here/network-observer";
-import { buildCompanionPlayMediaRequest, choosePath, parsePlayerPreference, startPlayback, type PlaybackDeps } from "../patches/play-from-here/playback";
+import { buildCompanionPlayMediaRequest, choosePath, parseCompanionEnabled, parsePlayerPreference, startPlayback, type PlaybackDeps } from "../patches/play-from-here/playback";
 import plugin from "../patches/play-from-here/index";
 import { PatchSession } from "../runtime/engine";
 
@@ -100,6 +100,15 @@ describe("startPlayback", () => {
     expect(choosePath(deps({ preference: "companion", nativePlayer: () => p }))).toEqual({ path: "companion" });
     expect(parsePlayerPreference("fallback")).toBe("fallback");
     expect(parsePlayerPreference("bogus")).toBe("auto");
+  });
+
+  it("keeps the companion fallback off unless enabled or forced (PMS rejects it for Plex Web)", () => {
+    expect(parseCompanionEnabled(undefined, "auto")).toBe(false);
+    expect(parseCompanionEnabled("bogus", "auto")).toBe(false);
+    expect(parseCompanionEnabled("on", "auto")).toBe(true);
+    expect(parseCompanionEnabled(undefined, "companion")).toBe(true);
+    expect(parseCompanionEnabled("off", "companion")).toBe(false);
+    expect(choosePath(deps({ companionEnabled: parseCompanionEnabled(undefined, "auto") }))).toMatchObject({ path: null });
   });
 
   it("runs the fallback player when it is the chosen path", async () => {

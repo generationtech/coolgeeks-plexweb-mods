@@ -200,10 +200,11 @@ and the companion check), the rest skipped unless you set
 `PLEX_E2E_TV_SECTION_ID`, `PLEX_E2E_OTHER_SECTION_ID`,
 `PLEX_E2E_BIG_SECTION_ID` (a library with 100+ items). The companion test
 answers the last open question on a claimed server: it expects PMS to
-answer 404 to `playMedia` aimed at Plex Web. If it passes, also remove the
-companion path (or default `pfh-companion` to `off`) and note it in
-`docs/anchor-research.md`; if it fails because playback *started*, promote
-`api.companionPlayMedia` to verified with the versions. If the run shows a
+answer 404 to `playMedia` aimed at Plex Web. It passed on 4.160.0
+(2026-11-01), so the companion path is now off by default (opt in with
+`--opt pfh-companion=on`); if it ever fails because playback *started*,
+promote `api.companionPlayMedia` to verified with the versions and
+reconsider that default. If the run shows a
 sign-in screen, find the key(s) holding the token in a signed-in browser
 (DevTools > Application > Local Storage for `$PLEX_URL`), put them in
 `TOKEN_STORAGE_KEYS` in `e2e/auth.ts`. If it stops at "Select User"

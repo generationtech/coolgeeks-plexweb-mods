@@ -40,7 +40,7 @@ cd <copied dist/image>
   --plex-image localhost/plex:1.2.3.4-abcdef012 \
   --node-image docker.io/library/node:22-bookworm-slim@sha256:<64 hex> \
   --tag localhost/plex-mods:1.2.3.4-abcdef012
-# optional: --opt pfh-companion=off (repeatable), --no-banner, --engine docker
+# optional: --opt pfh-player=fallback (repeatable), --no-banner, --engine docker
 ```
 
 Use a Debian-based Node image (the script uses GNU `cp --parents`). Get a

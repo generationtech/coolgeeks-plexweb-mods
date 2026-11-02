@@ -1,10 +1,12 @@
 /**
  * Choosing and running a playback path (see PlaybackPath in bindings.ts):
- *   native -> native-fallback -> companion (auto), or forced with the
- *   runtime option pfh-player=primary|fallback|companion.
+ *   native -> native-fallback (auto), or forced with the runtime option
+ *   pfh-player=primary|fallback|companion.
  *
- * The companion path is kept as a last resort, but in the sandbox PMS
- * rejects it (404): Plex Web never registers as a remote-control player.
+ * The companion path is off by default (opt in with pfh-companion=on, or
+ * force it with pfh-player=companion): PMS rejects it (404) both in the
+ * unclaimed sandbox and on a claimed server, because Plex Web never
+ * registers as a remote-control player.
  */
 import { BindingUnavailableError, type NativePlayer, type PlaybackPath, type PlaybackRequest } from "./bindings";
 import { metadataKey, normalizeBaseUrl, playQueueTypeFor, serializeQuery, type HttpRequest } from "./playqueue";
@@ -13,6 +15,13 @@ export type PlayerPreference = "auto" | "primary" | "fallback" | "companion";
 
 export function parsePlayerPreference(v: string | undefined): PlayerPreference {
   return v === "primary" || v === "fallback" || v === "companion" ? v : "auto";
+}
+
+/** pfh-companion: "on" enables it, "off" disables it; unset means only when pfh-player=companion forces it. */
+export function parseCompanionEnabled(v: string | undefined, preference: PlayerPreference): boolean {
+  if (v === "on") return true;
+  if (v === "off") return false;
+  return preference === "companion";
 }
 
 export interface CompanionOptions {

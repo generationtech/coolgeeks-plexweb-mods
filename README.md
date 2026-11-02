@@ -96,8 +96,8 @@ else are inherited. Rebuild after every Plex image update. Details:
 | `npm run secrets` | gitleaks over the full history |
 
 Runtime options are passed as `--opt key=value` and end up as
-`data-opt-*` attributes on the injected tag: `pfh-companion=off` disables
-the experimental companion fallback, `pfh-scheme=library` uses
+`data-opt-*` attributes on the injected tag: `pfh-companion=on` enables
+the companion fallback (off by default: PMS rejects it for Plex Web), `pfh-scheme=library` uses
 `library://` URIs, `pfh-drop-params=a,b` drops extra listing params,
 `pfh-route-check=off` offers the menu entry without the route check.
 `pfh-player=primary|fallback|companion` forces a playback path (default:
@@ -165,13 +165,14 @@ same PMS release: it is flaky (BACKLOG B11).
     rather than appending.
 
   Both were forced and verified live (`--opt pfh-player=primary|fallback`).
-- **Companion fallback: not usable with Plex Web.** Forced in the sandbox,
-  PMS answers 404 to `playMedia` aimed at Plex Web, and its `/clients` list
-  stays empty. The bundle shows why: Plex Web 4.162.1 only *sends* remote-control
-  commands (it's a controller) and never declares itself a player. The
-  path stays as a last resort with an accurate error message. Whether a
-  *claimed* server changes anything is the one open question (BACKLOG B4:
-  the companion e2e test against a claimed server).
+- **Companion fallback: not usable with Plex Web, so off by default.**
+  Forced, PMS answers 404 to `playMedia` aimed at Plex Web and its
+  `/clients` list stays empty, both in the unclaimed sandbox and on the
+  owner's claimed server (Plex Web 4.160.0, 2026-11-01). The bundle shows
+  why: Plex Web only *sends* remote-control commands (it's a controller)
+  and never declares itself a player. The path stays in the code, opt-in
+  (`--opt pfh-companion=on`, or forced with `pfh-player=companion`), with
+  an accurate error message.
 - **Anchors:** every Plex-coupled anchor in `plex-anchors.ts` is verified
   except the companion one. Preflight is green on 4.160.0 (the PMS
   1.43.4.10903 package, checked offline), 4.162.1, and the initial chunks of
@@ -194,7 +195,7 @@ same PMS release: it is flaky (BACKLOG B11).
 - **PMS API:** a sorted section or season `uri` plus `key` yields the visible
   order from the clicked item on; filters are honoured. Plex Web's own
   library Play button sends the same `uri` without `key`.
-- **Tooling:** 280 unit tests. CI on GitHub-hosted runners runs gitleaks,
+- **Tooling:** 286 unit tests. CI on GitHub-hosted runners runs gitleaks,
   lint, tests, the build, the sandbox e2e, and a real podman build of the
   derived image against synthetic Plex bases (one must pass, one must fail
   on preflight; `scripts/ci/image-smoke.sh`), using Node 24 actions
@@ -205,13 +206,13 @@ same PMS release: it is flaky (BACKLOG B11).
 
 - the container host checks, the `*.plex.direct` URL and the absence of a
   CSP header (B1);
-- the rest of the live e2e on a *claimed* server (B4). On Plex Web
-  4.160.0 with a token, the grid test passed: the e2e signs in as the
-  token's account and skips "Select User" for a Plex Home. Still open:
-  Detail View, Table View, Other Videos and the companion check, which
-  timed out choosing a sort the account already had (fixed since), and
-  whether turning settings sync off in the test browser keeps the
-  account's per-library sort and view style unchanged;
+- the last of the live e2e on a *claimed* server (B4). On Plex Web
+  4.160.0 with a token, grid, Detail View, Table View and the companion
+  check passed (runtime injected by interception, server untouched).
+  Still open: Other Videos, which failed only because the test read the
+  first 500 items of a 2,641-item library while Plex Web queued all of
+  them (fixed since), and whether turning settings sync off in the test
+  browser keeps the account's per-library sort and view style unchanged;
 - the derived image built from a real Plex image and deployed (B5).
 
 The weekly breakage canary (B8) is designed but not built.

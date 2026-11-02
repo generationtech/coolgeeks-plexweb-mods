@@ -261,3 +261,13 @@ refused by the sandbox network and were not needed.
   and sets the device setting `shouldSyncSettings` to false ("Turn off
   settings sync"; gates Plex Web's `POST /api/v2/user/settings`) so the
   tests' sorts and view styles stay out of the account. Unverified.
+- 2026-11-01 (session 5, B4 third run): on 4.160.0 against the claimed
+  server, grid, Detail View, Table View and the companion check **passed**.
+  The sort-already-active handling worked ("<label> Selected" in the
+  popup, "<label> Ascending/Descending" in Table View). Companion on a
+  claimed server: PMS answers 404 to `playMedia` aimed at Plex Web and
+  `/clients` stays empty, as in the sandbox, so `pfh-companion` now
+  defaults to off (`api.companionPlayMedia` stays unverified: never seen
+  working). Other Videos failed only in the test: Plex Web queued the whole
+  2,641-item library (`playQueueTotalCount`), while the test's listing
+  stopped at 500 items; it now pages through the whole listing.

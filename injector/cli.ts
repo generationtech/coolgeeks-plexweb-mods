@@ -30,7 +30,7 @@ options:
   --no-banner          never show the on-page failure banner (console only)
   --verify             after applying, fetch PLEX_URL/web/index.html and the runtime over HTTP
   --verify-served      only that HTTP check, touching no files (e.g. for a derived image); needs PLEX_URL
-  --opt key=value      plugin option, e.g. --opt pfh-companion=off (repeatable)
+  --opt key=value      plugin option, e.g. --opt pfh-player=fallback (repeatable)
   --install-type T     linux | docker | podman   (env PLEX_INSTALL_TYPE, default linux)
   --web-dir DIR        Plex Web dir with index.html (env PLEX_WEB_DIR; auto-discovered if unset)
   --container NAME     docker/podman container  (env PLEX_CONTAINER or PLEX_DOCKER_CONTAINER, default plex)

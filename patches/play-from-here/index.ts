@@ -15,7 +15,7 @@ import { createDefaultBindings, parseRoute } from "./default-bindings";
 import { createDomMenuIntegration } from "./dom-menu";
 import { runPlayFromHere, type FlowResult } from "./flow";
 import { createFallbackPlayer, createNativePlayer, findHandlerMap, type NativePlayerState } from "./native-player";
-import { parsePlayerPreference } from "./playback";
+import { parseCompanionEnabled, parsePlayerPreference } from "./playback";
 import { installNetworkObserver, ListingTracker } from "./network-observer";
 import type { ItemRef } from "./playqueue";
 import { PLEX_ANCHORS } from "./plex-anchors";
@@ -140,6 +140,7 @@ const plugin: PlayFromHerePlugin = {
     const tracker = plugin.tracker ?? new ListingTracker(() => win.location.href);
     const opt = api.config.options;
     let commandId = 0;
+    const preference = parsePlayerPreference(opt["pfh-player"]);
     const bindings = createDefaultBindings({
       location: win.location,
       tracker,
@@ -148,8 +149,8 @@ const plugin: PlayFromHerePlugin = {
         nativePlayer: () => plugin.nativePlayer ?? (plugin.native.handlers && plugin.native.getAppModel ? createNativePlayer(plugin.native) : null),
         fallbackPlayer: () =>
           plugin.nativeFallback.handlers && plugin.nativeFallback.getAppModel ? createFallbackPlayer(plugin.nativeFallback) : null,
-        preference: parsePlayerPreference(opt["pfh-player"]),
-        companionEnabled: opt["pfh-companion"] !== "off",
+        preference,
+        companionEnabled: parseCompanionEnabled(opt["pfh-companion"], preference),
         fetch: (url, init) => win.fetch(url, init),
         nextCommandId: () => ++commandId,
       },
