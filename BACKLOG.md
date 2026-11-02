@@ -72,14 +72,17 @@ On the container host (through ssh), then over HTTP from the workstation:
 ```sh
 ssh "$PLEX_SSH" "podman ps --format '{{.Names}}  {{.Image}}'"
 ssh "$PLEX_SSH" "podman inspect --format 'image={{.ImageName}} readonly={{.HostConfig.ReadonlyRootfs}} rm={{.HostConfig.AutoRemove}} user={{.Config.User}}' '$PLEX_CONTAINER'"
-ssh "$PLEX_SSH" "podman exec '$PLEX_CONTAINER' find /usr/lib/plexmediaserver -path '*WebClient.bundle/Contents/Resources/index.html'"
 ssh "$PLEX_SSH" "systemctl cat '$PLEX_UNIT' | grep -n -E 'podman run|--read-only|--rm|image|localhost/'"
+ssh "$PLEX_SSH" "podman exec '$PLEX_CONTAINER' find /usr/lib/plexmediaserver -path '*WebClient.bundle/Contents/Resources/index.html'"   # optional
 ```
 
 Expected: one container (its name goes into `.env` as `PLEX_CONTAINER`
-before the next two commands); `readonly=true rm=true`; exactly one path,
-`/usr/lib/plexmediaserver/Resources/Plug-ins-<build>/WebClient.bundle/Contents/Resources/index.html`;
-the unit's `podman run` line ends with the image reference. Put the
+before the next commands); `readonly=true rm=true`; the unit's
+`podman run` line ends with the image reference; exactly one path,
+`/usr/lib/plexmediaserver/Resources/Plug-ins-<build>/WebClient.bundle/Contents/Resources/index.html`.
+The last command is optional: it runs a process inside the live
+container, which a hardened host may not want, and B3 (offline) and the
+B5 build both find the same path without it. Put the
 `image=` value in `.env` as `PLEX_IMAGE`, the unit name as `PLEX_UNIT`,
 and choose `PLEX_MODS_IMAGE` (same name plus `-mods`, same tag) and
 `PLEX_MODS_BUILD_DIR` (any root-only directory outside your Plex data).
