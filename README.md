@@ -175,7 +175,8 @@ same PMS release: it is flaky (BACKLOG B11).
 - **Anchors:** every Plex-coupled anchor in `plex-anchors.ts` is verified
   except the companion one. Preflight is green on 4.160.0 (the PMS
   1.43.4.10903 package, checked offline), 4.162.1, and the initial chunks of
-  4.163.0 from app.plex.tv. Live runs so far used 4.162.1 only. See
+  4.163.0 from app.plex.tv. Live runs used 4.162.1 (sandbox, every test)
+  and 4.160.0 (the owner's claimed server: the grid test, 2026-11-01). See
   `docs/anchor-research.md`.
 - **Workstation development:** the pre-commit hook loads nvm's Node when a
   GUI git client runs it without Node 22 on PATH. Owner-only notes live in
@@ -204,11 +205,13 @@ same PMS release: it is flaky (BACKLOG B11).
 
 - the container host checks, the `*.plex.direct` URL and the absence of a
   CSP header (B1);
-- a live e2e on a *claimed* server with a token, server untouched: the
-  token storage key is verified on Plex Web 4.160.0 (the e2e signs in as
-  the token's account); still open are getting past "Select User" for an
-  account in a Plex Home (`autoLogin` in `e2e/auth.ts`), the runtime on
-  4.160.0, and the companion check (B4);
+- the rest of the live e2e on a *claimed* server (B4). On Plex Web
+  4.160.0 with a token, the grid test passed: the e2e signs in as the
+  token's account and skips "Select User" for a Plex Home. Still open:
+  Detail View, Table View, Other Videos and the companion check, which
+  timed out choosing a sort the account already had (fixed since), and
+  whether turning settings sync off in the test browser keeps the
+  account's per-library sort and view style unchanged;
 - the derived image built from a real Plex image and deployed (B5).
 
 The weekly breakage canary (B8) is designed but not built.

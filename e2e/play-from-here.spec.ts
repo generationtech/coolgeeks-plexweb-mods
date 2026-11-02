@@ -100,7 +100,16 @@ async function expectNativePlayback(c: Ctx, queueId: string): Promise<void> {
 
 /** Sorts a library page and returns the server's order for Plex Web's own listing request. */
 async function sortAndRead(c: Ctx, sectionId: string, sortLabel: string): Promise<string[]> {
-  const sorted = c.ui.page.waitForResponse((r) => new RegExp(`/library/sections/${sectionId}/all\\?`).test(r.url()) && /[?&]sort=/.test(r.url()));
+  const listing = () =>
+    c.ui.page.waitForResponse((r) => new RegExp(`/library/sections/${sectionId}/all\\?`).test(r.url()) && /[?&]sort=/.test(r.url()), { timeout: 30_000 });
+  if (await c.ui.isCurrentSort(sortLabel)) {
+    // Already sorted that way (remembered per library): sort differently first, so the
+    // target sort makes Plex Web request the listing again.
+    const away = listing();
+    await c.ui.applySort(sortLabel === "Title" ? "Date Added" : "Title");
+    await away;
+  }
+  const sorted = listing();
   await c.ui.applySort(sortLabel);
   const params = new URL((await sorted).url()).searchParams;
   const order = await c.api.listingKeys(sectionId, params);

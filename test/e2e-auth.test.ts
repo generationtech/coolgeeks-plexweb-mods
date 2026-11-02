@@ -15,8 +15,9 @@ const init: AuthInit = {
   keys: [...TOKEN_STORAGE_KEYS],
   token: "test-token",
   deviceSettingsKey: DEVICE_SETTINGS.storageKey,
-  autoLoginAttr: DEVICE_SETTINGS.autoLogin,
+  deviceSettings: { ...DEVICE_SETTINGS.values },
 };
+const injected = { autoLogin: true, shouldSyncSettings: false };
 
 function run(storage: unknown) {
   vi.stubGlobal("window", { localStorage: storage });
@@ -26,23 +27,23 @@ function run(storage: unknown) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("e2e auth init script", () => {
-  it("stores the token and turns on automatic sign-in on a fresh profile", () => {
+  it("stores the token, turns on automatic sign-in and turns off settings sync on a fresh profile", () => {
     const s = fakeStorage();
     run(s);
     expect(s.data.get("myPlexAccessToken")).toBe("test-token");
-    expect(JSON.parse(s.data.get("deviceSettings")!)).toEqual({ autoLogin: true });
+    expect(JSON.parse(s.data.get("deviceSettings")!)).toEqual(injected);
   });
 
   it("keeps device settings Plex Web saved earlier (the script runs on every page load)", () => {
-    const s = fakeStorage({ deviceSettings: JSON.stringify({ autoLogin: false, volume: 40, dismissedUnclaimedServers: { x: true } }) });
+    const s = fakeStorage({ deviceSettings: JSON.stringify({ autoLogin: false, shouldSyncSettings: true, volume: 40, dismissedUnclaimedServers: { x: true } }) });
     run(s);
-    expect(JSON.parse(s.data.get("deviceSettings")!)).toEqual({ autoLogin: true, volume: 40, dismissedUnclaimedServers: { x: true } });
+    expect(JSON.parse(s.data.get("deviceSettings")!)).toEqual({ ...injected, volume: 40, dismissedUnclaimedServers: { x: true } });
   });
 
   it.each(["not json", "[1,2]", "null", "42"])("replaces unusable device settings (%s)", (stored) => {
     const s = fakeStorage({ deviceSettings: stored });
     run(s);
-    expect(JSON.parse(s.data.get("deviceSettings")!)).toEqual({ autoLogin: true });
+    expect(JSON.parse(s.data.get("deviceSettings")!)).toEqual(injected);
   });
 
   it("does not throw when storage is blocked", () => {

@@ -24,6 +24,7 @@ export default defineConfig({
     trace: trace ? "retain-on-failure" : "off",
     screenshot: trace ? "only-on-failure" : "off",
     video: "off",
+    actionTimeout: 30_000, // fail a stuck click in seconds, not at the 2-minute test timeout
     ignoreHTTPSErrors: process.env.PLEX_E2E_IGNORE_TLS === "1",
   },
   projects: [

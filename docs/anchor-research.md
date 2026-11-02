@@ -249,3 +249,15 @@ refused by the sandbox network and were not needed.
   bundle, the startup lock is skipped when the device setting `autoLogin`
   ("Automatically Sign In", stored as JSON under `deviceSettings`) is
   true; `e2e/auth.ts` now sets it. Unverified until the next run passes.
+- 2026-11-01 (session 5, B4 second run): with `autoLogin`, the grid test
+  **passed** on 4.160.0 against the claimed server (first live pass on
+  4.160.0 and on a claimed server; runtime injected by interception). The
+  other UI tests timed out choosing a sort: a real account remembers each
+  library's sort and view style (synced across devices), so a fresh
+  profile can open a library already sorted the requested way. Then the
+  sort menu item is named "<label> Selected" (accessible name; an image
+  "Selected") and the active Table View header "<label> Ascending" or
+  "<label> Descending". The e2e now sorts differently first in that case,
+  and sets the device setting `shouldSyncSettings` to false ("Turn off
+  settings sync"; gates Plex Web's `POST /api/v2/user/settings`) so the
+  tests' sorts and view styles stay out of the account. Unverified.

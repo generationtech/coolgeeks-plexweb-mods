@@ -5,30 +5,40 @@
  *
  * - TOKEN_STORAGE_KEYS: verified on Plex Web 4.160.0 against a claimed
  *   server (2026-11-01): Plex Web signed in as the token's account.
- * - DEVICE_SETTINGS: Plex Web's per-device "Automatically Sign In" setting
- *   ("Do not prompt to select a user or enter a PIN during startup on this
- *   device"). Without it, an account in a Plex Home (more than one user, or
- *   a PIN) starts at "Select User" on a fresh browser profile. UNVERIFIED
- *   until a live run passes with it (BACKLOG B4); found in the 4.160.0 bundle.
+ * - DEVICE_SETTINGS, two of Plex Web's per-device settings (the JSON under
+ *   `deviceSettings`), both found in the 4.160.0 bundle:
+ *   - `autoLogin` = true, "Automatically Sign In" ("Do not prompt to select
+ *     a user or enter a PIN during startup on this device"). Without it, an
+ *     account in a Plex Home (more than one user, or a PIN) starts at
+ *     "Select User" on a fresh browser profile. Verified on 4.160.0
+ *     (2026-11-01): the grid test got past sign-in and passed.
+ *   - `shouldSyncSettings` = false, "Turn off settings sync": the sorts and
+ *     view styles the tests pick must not sync to the account (a real
+ *     account remembers them per library, on every device). UNVERIFIED
+ *     until a live run shows the account's settings unchanged (BACKLOG B4).
  */
 import type { BrowserContext } from "@playwright/test";
 
 export const TOKEN_STORAGE_KEYS = ["myPlexAccessToken"] as const;
-export const DEVICE_SETTINGS = { storageKey: "deviceSettings", autoLogin: "autoLogin" } as const;
+export const DEVICE_SETTINGS = {
+  storageKey: "deviceSettings",
+  values: { autoLogin: true, shouldSyncSettings: false },
+} as const;
 
 export interface AuthInit {
   keys: string[];
   token: string;
   deviceSettingsKey: string;
-  autoLoginAttr: string;
+  /** Merged into the stored device settings; other settings are kept. */
+  deviceSettings: Record<string, unknown>;
 }
 
 /**
  * Runs in the page before Plex Web (addInitScript serializes it): keep it
- * self-contained. Sets the token and turns on "Automatically Sign In",
- * keeping any other device settings Plex Web saved during the test.
+ * self-contained. Sets the token and the device settings, keeping any
+ * other device settings Plex Web saved during the test.
  */
-export function authInitScript({ keys, token, deviceSettingsKey, autoLoginAttr }: AuthInit): void {
+export function authInitScript({ keys, token, deviceSettingsKey, deviceSettings }: AuthInit): void {
   try {
     const storage = window.localStorage;
     for (const k of keys) storage.setItem(k, token);
@@ -39,7 +49,7 @@ export function authInitScript({ keys, token, deviceSettingsKey, autoLoginAttr }
     } catch {
       /* unreadable: replace it */
     }
-    settings[autoLoginAttr] = true;
+    for (const k of Object.keys(deviceSettings)) settings[k] = deviceSettings[k];
     storage.setItem(deviceSettingsKey, JSON.stringify(settings));
   } catch {
     /* storage blocked */
@@ -52,6 +62,6 @@ export async function injectTokenAuth(context: BrowserContext, token: string | u
     keys: [...TOKEN_STORAGE_KEYS],
     token,
     deviceSettingsKey: DEVICE_SETTINGS.storageKey,
-    autoLoginAttr: DEVICE_SETTINGS.autoLogin,
+    deviceSettings: { ...DEVICE_SETTINGS.values },
   });
 }

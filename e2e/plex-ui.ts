@@ -14,7 +14,11 @@ export const UI = {
   dismissUnclaimed: "Don't show this again",
   /** Sort popup button (grid and Detail View); its text is the current sort ("By Title"). */
   sortButton: { css: 'button[aria-haspopup="true"]', text: /^By / },
-  /** Table View has no sort popup: its column headers ("Title", "Year") are links that sort. */
+  /** Suffix of the active sort's menu item name ("Year Selected"). */
+  sortSelected: "Selected",
+  /** Table View has no sort popup: its column headers ("Title", "Year") are links that sort; the active
+   *  one's name carries its direction ("Year Descending"). */
+  sortDirections: ["Ascending", "Descending"],
   /** View-style popup ("Grid View", "Detail View", "Table View"). */
   viewButton: '[data-testid="toolbarView"]',
   /** A poster card in a grid. */
@@ -33,6 +37,8 @@ export const UI = {
 const itemLinkSelector = PLEX_ANCHORS.dom.itemLinkSelector.value;
 const itemLinkFor = (rk: string) => `a[href*="%2Flibrary%2Fmetadata%2F${rk}&"], a[href$="%2Flibrary%2Fmetadata%2F${rk}"]`;
 const itemKeyPattern = PLEX_ANCHORS.dom.itemKeyPattern.value;
+
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export class PlexWeb {
   constructor(readonly page: Page) {}
@@ -64,6 +70,16 @@ export class PlexWeb {
 
   async waitForRuntime(): Promise<void> {
     await this.page.waitForFunction(() => !!(window as any).__plexwebMods, undefined, { timeout: 30_000 });
+  }
+
+  /** Whether `label` is the library's current sort (a real account remembers it per library). */
+  async isCurrentSort(label: string): Promise<boolean> {
+    const popup = this.page.locator(UI.sortButton.css, { hasText: UI.sortButton.text }).first();
+    if (await popup.isVisible().catch(() => false)) {
+      return (await this.page.getByRole("button", { name: `By ${label}`, exact: true }).count()) > 0;
+    }
+    const active = new RegExp(`^${escapeRegExp(label)} (${UI.sortDirections.join("|")})$`);
+    return (await this.page.getByRole("link", { name: active }).count()) > 0;
   }
 
   async applySort(label: string): Promise<void> {
