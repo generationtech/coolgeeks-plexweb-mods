@@ -25,13 +25,24 @@ export class PlexApi {
     return (await this.json(`${this.baseUrl}/identity`)).MediaContainer.machineIdentifier;
   }
 
-  /** Rating keys of a section listing, in server order, for the given listing params. */
-  async listingKeys(sectionId: string, params: URLSearchParams, limit = 500): Promise<string[]> {
+  /**
+   * Rating keys of a whole section listing, in server order, for the given
+   * listing params. Pages through it: a real library can be far larger than
+   * one page, and "Play from here" queues all of it.
+   */
+  async listingKeys(sectionId: string, params: URLSearchParams, pageSize = 1000, maxItems = 100_000): Promise<string[]> {
     const q = sanitizeListingParams(params);
-    q.set("X-Plex-Container-Start", "0");
-    q.set("X-Plex-Container-Size", String(limit));
-    const body = await this.json(`${this.baseUrl}/library/sections/${sectionId}/all?${serializeQuery(q, true)}`);
-    return (body.MediaContainer.Metadata ?? []).map((m: any) => String(m.ratingKey));
+    const keys: string[] = [];
+    while (keys.length < maxItems) {
+      q.set("X-Plex-Container-Start", String(keys.length));
+      q.set("X-Plex-Container-Size", String(pageSize));
+      const mc = (await this.json(`${this.baseUrl}/library/sections/${sectionId}/all?${serializeQuery(q, true)}`)).MediaContainer;
+      const page: string[] = (mc.Metadata ?? []).map((m: any) => String(m.ratingKey));
+      keys.push(...page);
+      const total = Number(mc.totalSize);
+      if (page.length < pageSize || (Number.isFinite(total) && keys.length >= total)) break;
+    }
+    return keys;
   }
 
   /** Players PMS can route remote-control commands to (GET /clients). */
