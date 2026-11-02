@@ -283,3 +283,9 @@ refused by the sandbox network and were not needed.
   both test libraries sorted by Title in another browser, and after the
   run (which ends on Year and Date Added) they still sorted by Title with
   the same view style. B4 is done.
+- 2026-11-01 (session 5, B1): on the owner's container host, PMS
+  1.43.4.10903 runs in a read-only, `--rm` rootful Podman container whose
+  image is the last `podman run` argument of its systemd unit, and serves
+  `/web/index.html` with `Cache-Control: no-cache` and no
+  `Content-Security-Policy`. The in-container path check was skipped (it
+  would run a process in the live container); B3 already has the path.

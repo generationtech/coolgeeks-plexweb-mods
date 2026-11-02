@@ -67,6 +67,12 @@ force-added. Optional rehearsal with no server and no account:
 
 ## B1. Look at the Plex container (read-only)
 
+**Done (2026-11-01)** on the owner's host: rootful Podman, the Plex
+container read-only (`readonly=true rm=true`, a fresh container on every
+start), its image the last `podman run` argument of its unit; PMS serves
+`/web/index.html` with `Cache-Control: no-cache` and no
+`Content-Security-Policy`. So: derived image (B5), no CSP change needed.
+
 On the container host (through ssh), then over HTTP from the workstation:
 
 ```sh
@@ -265,7 +271,7 @@ the token, the plex.direct hash and 40-hex ids:
    ```sh
    npm run build
    ssh "$PLEX_SSH" "install -d -m 0750 '$PLEX_MODS_BUILD_DIR'"
-   rsync -rlpt --delete dist/image/ "$PLEX_SSH:$PLEX_MODS_BUILD_DIR/"
+   rsync -rlpt --delete dist/image/ "$PLEX_SSH:${PLEX_MODS_BUILD_DIR:?}/"   # :? refuses an empty value (--delete!)
    ssh "$PLEX_SSH" "cd '$PLEX_MODS_BUILD_DIR' && sha256sum -c --quiet SHA256SUMS && cat VERSION"
    ```
 

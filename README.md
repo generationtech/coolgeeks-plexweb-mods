@@ -202,7 +202,10 @@ style were unchanged afterwards.
   preflight fails the build on a broken anchor. The patch stage was run
   locally against the real Plex Web 4.160.0 (layer = the two files;
   `index.html` = original + one line). `--verify-served` checks a deployed
-  image over HTTP from the workstation.
+  image over HTTP from the workstation. On the owner's host (B1,
+  2026-11-01) the Plex container is read-only and recreated on every
+  start, and PMS serves `index.html` with `Cache-Control: no-cache` and no
+  Content-Security-Policy: the derived image is the path, with no CSP change.
 - **PMS API:** a sorted section or season `uri` plus `key` yields the visible
   order from the clicked item on; filters are honoured. Plex Web's own
   library Play button sends the same `uri` without `key`.
@@ -215,14 +218,12 @@ style were unchanged afterwards.
 
 **Not verified yet (needs the owner's server, see BACKLOG.md):**
 
-- the container host checks, the `*.plex.direct` URL and the absence of a
-  CSP header (B1);
 - the derived image built from a real Plex image and deployed (B5).
 
 The weekly breakage canary (B8) is designed but not built.
 
-**Next:** BACKLOG.md B1 → B5. B2 is settled (staying on PMS
-1.43.4.10903), B3 is done offline and B4 live for that release. The
+**Next:** BACKLOG.md B5. B1 and B2 are done (staying on PMS
+1.43.4.10903), B3 offline and B4 live for that release. The
 workstation's curl and Node do not trust the root at
 the top of the server's plex.direct chain yet (Let's Encrypt
 `ISRG Root YR`), so for now the curl checks use `-k` and the e2e
