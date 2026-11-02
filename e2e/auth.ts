@@ -14,8 +14,9 @@
  *     (2026-11-01): the grid test got past sign-in and passed.
  *   - `shouldSyncSettings` = false, "Turn off settings sync": the sorts and
  *     view styles the tests pick must not sync to the account (a real
- *     account remembers them per library, on every device). UNVERIFIED
- *     until a live run shows the account's settings unchanged (BACKLOG B4).
+ *     account remembers them per library, on every device). Verified on
+ *     4.160.0 (2026-11-01): after a full run, another browser still showed
+ *     each library's own sort and view style (BACKLOG B4).
  */
 import type { BrowserContext } from "@playwright/test";
 

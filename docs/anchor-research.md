@@ -276,3 +276,10 @@ refused by the sandbox network and were not needed.
   whole 2,641-item library in the visible order, selected at the clicked
   item. An Other Videos library (agent `tv.plex.agents.none`) behaves like
   a movie library for "Play from here".
+- 2026-11-01 (session 5, B4 fifth run): the full suite on 4.160.0 against
+  the claimed server in one run: grid, Detail View, Table View, Other
+  Videos and the companion check **passed** (TV and the 300-item tests not
+  configured). `shouldSyncSettings` = false is **verified**: the owner had
+  both test libraries sorted by Title in another browser, and after the
+  run (which ends on Year and Date Added) they still sorted by Title with
+  the same view style. B4 is done.

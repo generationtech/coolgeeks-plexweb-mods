@@ -12,7 +12,8 @@ playQueue curl test. The e2e suite is green against a throwaway unclaimed
 PMS (`scripts/sandbox-pms.sh`), locally and in CI on every push. It covers
 grid, Detail/Table View, TV season, Other Videos, 300-item windowing with
 Next/Previous and with unpaused autoplay, and a check that the companion
-fallback cannot reach Plex Web (only a claimed server is left to try, B4).
+fallback cannot reach Plex Web. The same suite passed live against the
+owner's claimed server (B4, Plex Web 4.160.0), the companion check included.
 The derived image (`image/`) is built for real by CI with podman against
 synthetic Plex bases (`scripts/ci/image-smoke.sh`).
 
@@ -164,11 +165,12 @@ active and playback keeps working.
 
 ## B4. Live e2e against your server, server untouched (token auth)
 
-**Status (2026-11-01):** on Plex Web 4.160.0, grid, Detail View, Table
-View, Other Videos and the companion check passed. Open: the settings-sync
-check below, and the TV test if you have a TV library
-(`PLEX_E2E_TV_SECTION_ID=<id> npx playwright test -g TV`, expect
-`1 passed`).
+**Done (2026-11-01)** on PMS 1.43.4.10903 / Plex Web 4.160.0: one full
+run, **5 passed** (grid, Detail View, Table View, Other Videos, companion
+check), 3 skipped; the account's sort and view style were unchanged
+afterwards. Re-run after a Plex update (B6). Optional: the TV test, if you
+have a TV library (`PLEX_E2E_TV_SECTION_ID=<id> npx playwright test -g TV`,
+expect `1 passed`).
 
 Route mode injects the local build into the test browser by request
 interception: this proves the mod live on your Plex Web without changing
@@ -180,9 +182,10 @@ verified on 4.160.0), because an account in a Plex Home (more than one
 user, or a PIN) otherwise starts at "Select User"; and settings sync off
 (`shouldSyncSettings`), because a real account remembers each library's
 sort and view style on every device, and the tests change both. Sync off
-is the one remaining unverified e2e assumption: before the run, note your
-test libraries' sort and view style in your own browser; after it, they
-must be unchanged. The tests cope with a library already sorted the way
+is verified on 4.160.0 (a full run left them unchanged); after a Plex
+update, check again: sort your test libraries by Title in your own
+browser, run the suite, reload, and they must still sort by Title. The
+tests cope with a library already sorted the way
 they want (they sort differently first).
 
 ```sh
@@ -220,8 +223,7 @@ Sign In" in a signed-in browser and compare its `deviceSettings` value
 (key names only) with `DEVICE_SETTINGS` in `e2e/auth.ts`. If your
 libraries' sort or view style changed after a run, settings sync was not
 off: set them back in your browser and look for another way to keep the
-test browser's choices local (`shouldSyncSettings` in `e2e/auth.ts`);
-when they stay unchanged, mark it verified there.
+test browser's choices local (`shouldSyncSettings` in `e2e/auth.ts`).
 `PLEX_E2E_TV_SECTION_ID` must be a TV library (type `show`) and
 `PLEX_E2E_OTHER_SECTION_ID` an Other Videos library (agent
 `tv.plex.agents.none`); leave either unset if you have none. Set `PLEX_E2E_SORT_LABEL` to a sort your library offers (default

@@ -157,6 +157,16 @@ actions. The sandbox e2e failed twice in session 5, at different steps,
 once on the commit the session started from, and passed again with the
 same PMS release: it is flaky (BACKLOG B11).
 
+**Also live on the owner's claimed server (B4, 2026-11-01):** PMS
+1.43.4.10903 with its Plex Web 4.160.0, token auth, runtime injected by
+interception, server untouched. One full run passed tests 1 (grid, Detail
+View, Table View), 3 (an Other Videos library of 2,641 items, queued
+whole in the visible order) and 6 (the companion check); 2, 4 and 5 were
+not configured (no TV library set; the 300-item tests need the sandbox's
+2-second clips). The test browser signs in automatically through a Plex
+Home and keeps settings sync off: the account's per-library sort and view
+style were unchanged afterwards.
+
 - **Native player, two paths** (group `play-from-here/player`; preflight and
   the runtime print which is active):
   - **primary:** Plex Web's "start existing play queue" action;
@@ -207,19 +217,13 @@ same PMS release: it is flaky (BACKLOG B11).
 
 - the container host checks, the `*.plex.direct` URL and the absence of a
   CSP header (B1);
-- the last of the live e2e on a *claimed* server (B4). On Plex Web
-  4.160.0 with a token, grid, Detail View, Table View, Other Videos (a
-  2,641-item library, queued whole) and the companion check passed
-  (runtime injected by interception, server untouched). Still open:
-  whether turning settings sync off in the test browser keeps the
-  account's per-library sort and view style unchanged, and the TV test if
-  the owner has a TV library;
 - the derived image built from a real Plex image and deployed (B5).
 
 The weekly breakage canary (B8) is designed but not built.
 
-**Next:** BACKLOG.md B1 → B2 → B4 → B5 (B3 is already done offline for
-PMS 1.43.4.10903). The workstation's curl and Node do not trust the root at
+**Next:** BACKLOG.md B1 → B5. B2 is settled (staying on PMS
+1.43.4.10903), B3 is done offline and B4 live for that release. The
+workstation's curl and Node do not trust the root at
 the top of the server's plex.direct chain yet (Let's Encrypt
 `ISRG Root YR`), so for now the curl checks use `-k` and the e2e
 `PLEX_E2E_IGNORE_TLS=1` (BACKLOG B1 note). Optional: B6 (rebuild after
