@@ -164,6 +164,12 @@ active and playback keeps working.
 
 ## B4. Live e2e against your server, server untouched (token auth)
 
+**Status (2026-11-01):** on Plex Web 4.160.0, grid, Detail View, Table
+View, Other Videos and the companion check passed. Open: the settings-sync
+check below, and the TV test if you have a TV library
+(`PLEX_E2E_TV_SECTION_ID=<id> npx playwright test -g TV`, expect
+`1 passed`).
+
 Route mode injects the local build into the test browser by request
 interception: this proves the mod live on your Plex Web without changing
 the server. A claimed server needs a token, which the e2e puts into
@@ -196,7 +202,8 @@ Network, any request to the server), into `.env` only, never into a chat
 or a shell history: `read -rs T && sed -i "s/^PLEX_TOKEN=.*/PLEX_TOKEN=$T/" .env && unset T`.
 It is your account's token: treat it like a password (signing out all
 devices on plex.tv revokes it). Set `PLEX_SECTION_ID` to a movie library id. Expected: **4 passed** (grid, Detail View, Table View,
-and the companion check), the rest skipped unless you set
+and the companion check; one more for each of TV and Other Videos when
+set), the rest skipped unless you set
 `PLEX_E2E_TV_SECTION_ID`, `PLEX_E2E_OTHER_SECTION_ID`,
 `PLEX_E2E_BIG_SECTION_ID` (a library with 100+ items). The companion test
 answers the last open question on a claimed server: it expects PMS to

@@ -271,3 +271,8 @@ refused by the sandbox network and were not needed.
   working). Other Videos failed only in the test: Plex Web queued the whole
   2,641-item library (`playQueueTotalCount`), while the test's listing
   stopped at 500 items; it now pages through the whole listing.
+- 2026-11-01 (session 5, B4 fourth run): on 4.160.0 against the claimed
+  server, Other Videos **passed** with the paged listing: the queue held the
+  whole 2,641-item library in the visible order, selected at the clicked
+  item. An Other Videos library (agent `tv.plex.agents.none`) behaves like
+  a movie library for "Play from here".

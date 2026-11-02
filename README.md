@@ -177,7 +177,8 @@ same PMS release: it is flaky (BACKLOG B11).
   except the companion one. Preflight is green on 4.160.0 (the PMS
   1.43.4.10903 package, checked offline), 4.162.1, and the initial chunks of
   4.163.0 from app.plex.tv. Live runs used 4.162.1 (sandbox, every test)
-  and 4.160.0 (the owner's claimed server: the grid test, 2026-11-01). See
+  and 4.160.0 (the owner's claimed server: grid, Detail View, Table View,
+  Other Videos and the companion check, 2026-11-01). See
   `docs/anchor-research.md`.
 - **Workstation development:** the pre-commit hook loads nvm's Node when a
   GUI git client runs it without Node 22 on PATH. Owner-only notes live in
@@ -207,12 +208,12 @@ same PMS release: it is flaky (BACKLOG B11).
 - the container host checks, the `*.plex.direct` URL and the absence of a
   CSP header (B1);
 - the last of the live e2e on a *claimed* server (B4). On Plex Web
-  4.160.0 with a token, grid, Detail View, Table View and the companion
-  check passed (runtime injected by interception, server untouched).
-  Still open: Other Videos, which failed only because the test read the
-  first 500 items of a 2,641-item library while Plex Web queued all of
-  them (fixed since), and whether turning settings sync off in the test
-  browser keeps the account's per-library sort and view style unchanged;
+  4.160.0 with a token, grid, Detail View, Table View, Other Videos (a
+  2,641-item library, queued whole) and the companion check passed
+  (runtime injected by interception, server untouched). Still open:
+  whether turning settings sync off in the test browser keeps the
+  account's per-library sort and view style unchanged, and the TV test if
+  the owner has a TV library;
 - the derived image built from a real Plex image and deployed (B5).
 
 The weekly breakage canary (B8) is designed but not built.
